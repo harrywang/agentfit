@@ -1,6 +1,6 @@
 import { app, BrowserWindow, shell, dialog } from 'electron'
 import { execSync, spawn } from 'child_process'
-import { existsSync, writeFileSync } from 'fs'
+import { existsSync } from 'fs'
 import path from 'path'
 import http from 'http'
 
@@ -23,25 +23,47 @@ let serverProcess = null
 let mainWindow = null
 
 function log(msg) {
-  console.log(`[AgentFit] ${msg}`)
+  try {
+    console.log(`[AgentFit] ${msg}`)
+  } catch {
+    // Ignore EPIPE — no terminal in packaged app
+  }
 }
 
+// Prevent uncaught EPIPE from crashing the app
+process.on('uncaughtException', (err) => {
+  if (err.code === 'EPIPE') return
+  throw err
+})
+
 function ensureDatabase() {
-  if (!existsSync(DB_PATH)) {
-    log('Creating database...')
-    const schemaPath = path.join(PRISMA_DIR, 'schema.prisma')
-    try {
-      execSync(`npx prisma migrate deploy --schema "${schemaPath}"`, {
+  const schemaSQL = path.join(PRISMA_DIR, 'schema.sql')
+  const initScript = isPacked
+    ? path.join(process.resourcesPath, 'app.asar.unpacked', 'electron', 'init-db.mjs')
+    : path.join(import.meta.dirname, 'init-db.mjs')
+
+  if (!existsSync(schemaSQL)) {
+    throw new Error(`schema.sql not found at ${schemaSQL}. Run "npm run prisma:schema-sql" first.`)
+  }
+
+  log(existsSync(DB_PATH) ? 'Checking database schema...' : 'Creating database...')
+
+  // Run init-db.mjs using Electron's bundled Node.js runtime.
+  // Uses @libsql/client (already bundled) — works on macOS, Linux, and Windows.
+  // schema.sql uses IF NOT EXISTS — safe to run on existing DBs.
+  try {
+    execSync(
+      `"${process.execPath}" "${initScript}" "${DB_PATH}" "${schemaSQL}"`,
+      {
         stdio: 'pipe',
-        env: {
-          ...process.env,
-          DATABASE_URL: `file:${DB_PATH}`,
-        },
-      })
-      log('Database created.')
-    } catch (err) {
-      log(`Prisma migrate warning: ${err.message}`)
-    }
+        timeout: 15000,
+        env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
+      }
+    )
+    log('Database ready.')
+  } catch (err) {
+    const stderr = err.stderr?.toString() || err.message
+    log(`Database setup warning: ${stderr}`)
   }
 }
 
@@ -71,8 +93,8 @@ function startServer() {
       },
     })
 
-    serverProcess.stdout.on('data', (d) => log(d.toString().trim()))
-    serverProcess.stderr.on('data', (d) => log(d.toString().trim()))
+    serverProcess.stdout?.on('data', (d) => log(d.toString().trim()))
+    serverProcess.stderr?.on('data', (d) => log(d.toString().trim()))
     serverProcess.on('error', (err) => {
       log(`Server process error: ${err.message}`)
       reject(err)

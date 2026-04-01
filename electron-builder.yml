@@ -27,6 +27,7 @@ files:
 
 asarUnpack:
   - "electron/server/**/*"
+  - "electron/init-db.mjs"
 
 extraResources:
   - from: "prisma"

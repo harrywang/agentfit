@@ -18,6 +18,10 @@
 # production
 /build
 
+# electron
+/dist-electron
+/electron/server
+
 # misc
 .DS_Store
 *.pem
@@ -34,3 +38,17 @@ pnpm-debug.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+/generated/prisma
+
+# data
+/data/images/
+/agentfit.db
+/agentfit.db-journal
+.env
+
+# certificates
+*.cer
+
+# claude code local config
+.claude/

@@ -1,0 +1,75 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model Session {
+  id                  String   @id @default(cuid())
+  sessionId           String   @unique
+  project             String
+  projectPath         String
+  startTime           DateTime
+  endTime             DateTime
+  durationMinutes     Float
+  userMessages        Int
+  assistantMessages   Int
+  totalMessages       Int
+  inputTokens         Int
+  outputTokens        Int
+  cacheCreationTokens Int
+  cacheReadTokens     Int
+  totalTokens         Int
+  costUSD             Float
+  model               String
+  toolCallsTotal      Int
+  toolCallsJson       String // JSON string of Record<string, number>
+  skillCallsJson      String   @default("{}") // JSON string of Record<string, number>
+  messageTimestamps   String   @default("[]") // JSON array of ISO timestamp strings
+  apiErrors           Int      @default(0)
+  rateLimitErrors     Int      @default(0)
+  userInterruptions   Int      @default(0)
+  permissionModesJson String   @default("{}") // JSON: {default:N, acceptEdits:N, bypassPermissions:N, plan:N}
+  systemPromptEdits   Int      @default(0) // Edits/writes to CLAUDE.md, AGENTS.md, agent.md
+  createdAt           DateTime @default(now())
+
+  @@index([project])
+  @@index([startTime])
+}
+
+model Image {
+  id        String   @id @default(cuid())
+  sessionId String
+  messageId String   // uuid of the message containing the image
+  filename  String   // relative path under data/images/
+  mediaType String   // e.g. image/png
+  sizeBytes Int
+  timestamp DateTime
+  role      String   // user or assistant
+  createdAt DateTime @default(now())
+
+  @@index([sessionId])
+  @@unique([sessionId, messageId, filename])
+}
+
+model SyncLog {
+  id              String   @id @default(cuid())
+  syncedAt        DateTime @default(now())
+  filesProcessed  Int
+  sessionsAdded   Int
+  sessionsSkipped Int
+}
+
+model Report {
+  id           String   @id @default(cuid())
+  title        String
+  generatedAt  DateTime @default(now())
+  contentJson  String
+  sessionCount Int
+  createdAt    DateTime @default(now())
+
+  @@index([generatedAt])
+}

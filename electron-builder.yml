@@ -1,0 +1,75 @@
+appId: com.agentfit.app
+productName: AgentFit
+copyright: Copyright © 2026 Harry Wang
+
+directories:
+  output: dist-electron
+
+files:
+  - "electron/**/*"
+  - "package.json"
+  - "!node_modules"
+  - "!dist-electron"
+  - "!data"
+  - "!agentfit.db"
+  - "!tests"
+  - "!src"
+  - "!app"
+  - "!lib"
+  - "!components"
+  - "!hooks"
+  - "!public"
+  - "!prisma"
+  - "!generated"
+  - "!build"
+  - "!scripts"
+  - "!bin"
+
+asarUnpack:
+  - "electron/server/**/*"
+
+extraResources:
+  - from: "prisma"
+    to: "prisma"
+    filter:
+      - "**/*"
+  - from: "generated"
+    to: "generated"
+    filter:
+      - "**/*"
+
+mac:
+  category: public.app-category.developer-tools
+  icon: build/icon.icns
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: electron/entitlements.mac.plist
+  entitlementsInherit: electron/entitlements.mac.plist
+  notarize: false
+  target:
+    - target: dmg
+      arch:
+        - x64
+        - arm64
+
+win:
+  icon: build/icon.ico
+  target:
+    - target: nsis
+      arch:
+        - x64
+
+nsis:
+  oneClick: true
+  perMachine: false
+  allowToChangeInstallationDirectory: false
+
+dmg:
+  title: "AgentFit"
+  contents:
+    - x: 130
+      y: 220
+    - x: 410
+      y: 220
+      type: link
+      path: "/Applications"

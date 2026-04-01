@@ -1,0 +1,69 @@
+#!/usr/bin/env node
+
+import { execSync, spawn } from 'child_process'
+import { existsSync, writeFileSync } from 'fs'
+import path from 'path'
+import { fileURLToPath } from 'url'
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
+const ROOT = path.resolve(__dirname, '..')
+const PORT = process.env.AGENTFIT_PORT || process.env.PORT || '3000'
+
+function info(msg) {
+  console.log(`\x1b[1;34m==>\x1b[0m ${msg}`)
+}
+function ok(msg) {
+  console.log(`\x1b[1;32m==>\x1b[0m ${msg}`)
+}
+function error(msg) {
+  console.error(`\x1b[1;31m==>\x1b[0m ${msg}`)
+}
+
+function run(cmd, opts = {}) {
+  execSync(cmd, { cwd: ROOT, stdio: 'inherit', ...opts })
+}
+
+// ─── Ensure .env exists ─────────────────────────────────────────────
+const envPath = path.join(ROOT, '.env')
+if (!existsSync(envPath)) {
+  writeFileSync(envPath, 'DATABASE_URL="file:./agentfit.db"\n')
+}
+
+// ─── First-run setup: prisma generate + migrate ─────────────────────
+const generatedClient = path.join(ROOT, 'generated', 'prisma')
+if (!existsSync(generatedClient)) {
+  info('First run detected — generating Prisma client...')
+  run('npx prisma generate')
+}
+
+const dbPath = path.join(ROOT, 'agentfit.db')
+if (!existsSync(dbPath)) {
+  info('Creating database...')
+  run('npx prisma migrate deploy')
+}
+
+// ─── Build if .next doesn't exist ───────────────────────────────────
+const nextDir = path.join(ROOT, '.next')
+if (!existsSync(nextDir)) {
+  info('Building production bundle (first run)...')
+  run('npm run build')
+}
+
+// ─── Start server ───────────────────────────────────────────────────
+ok(`Starting AgentFit on http://localhost:${PORT}`)
+console.log('  Press Ctrl+C to stop.\n')
+
+const server = spawn('npx', ['next', 'start', '-p', PORT], {
+  cwd: ROOT,
+  stdio: 'inherit',
+  env: { ...process.env, PORT },
+})
+
+server.on('close', (code) => process.exit(code ?? 0))
+
+// Forward signals
+for (const sig of ['SIGINT', 'SIGTERM']) {
+  process.on(sig, () => {
+    server.kill(sig)
+  })
+}

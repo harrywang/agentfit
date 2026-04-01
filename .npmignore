@@ -1,0 +1,52 @@
+# Dev/build artifacts
+.next/
+out/
+build/
+coverage/
+.DS_Store
+
+# Database & local data
+agentfit.db
+agentfit.db-journal
+data/images/
+.env
+.env*.local
+
+# Dev config
+tests/
+vitest.config.ts
+.eslintrc*
+eslint.config.*
+prettier.config.*
+tsconfig.json
+postcss.config.*
+*.tsbuildinfo
+next-env.d.ts
+
+# Docs (keep README, exclude the rest)
+CLAUDE.md
+CONTRIBUTING.md
+PATENT_APPLICATION.md
+PATENT_FILING_GUIDE.md
+extended_abstract_long.md
+LICENSE
+
+# Electron
+electron/
+dist-electron/
+electron-builder.yml
+scripts/
+
+# Build config
+prisma.config.ts
+setup.sh
+
+# Claude Code
+.claude/
+
+# Certificates
+*.cer
+
+# Git
+.git/
+.gitignore

@@ -17,6 +17,7 @@
 
 # production
 /build
+!/build/icon.png
 
 # electron
 /dist-electron

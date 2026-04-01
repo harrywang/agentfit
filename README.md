@@ -11,6 +11,8 @@ Download a pre-built installer from the [Releases](https://github.com/harrywang/
 - **macOS**: `AgentFit-x.x.x.dmg` (Intel) or `AgentFit-x.x.x-arm64.dmg` (Apple Silicon)
 - **Windows**: `AgentFit-x.x.x.exe`
 
+> **macOS note:** If you see "AgentFit Not Opened" on first launch, go to **System Settings > Privacy & Security**, scroll down, and click **Open Anyway**. Or run `xattr -cr /Applications/AgentFit.app` in Terminal.
+
 ### Option 2: One-liner
 
 ```bash

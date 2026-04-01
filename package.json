@@ -34,8 +34,8 @@
     "electron:prepare": "node scripts/prepare-electron.mjs",
     "electron:dev": "npm run build && npm run electron:prepare && electron .",
     "electron:build": "rm -rf dist-electron electron/server && npm run build && npm run electron:prepare && electron-builder --config electron-builder.yml",
-    "electron:build:mac": "rm -rf dist-electron electron/server && npm run build && npm run electron:prepare && electron-builder --mac --config electron-builder.yml",
-    "electron:build:win": "rm -rf dist-electron electron/server && npm run build && npm run electron:prepare && electron-builder --win --config electron-builder.yml",
+    "electron:build:mac": "rm -rf dist-electron electron/server && npm run build && npm run electron:prepare && electron-builder --mac --publish never --config electron-builder.yml",
+    "electron:build:win": "rm -rf dist-electron electron/server && npm run build && npm run electron:prepare && electron-builder --win --publish never --config electron-builder.yml",
     "electron:build:all": "rm -rf dist-electron electron/server && npm run build && npm run electron:prepare && electron-builder --mac --win --config electron-builder.yml"
   },
   "dependencies": {

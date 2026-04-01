@@ -4,19 +4,26 @@ Fitness tracker dashboard for AI coding agents. Reads your local Claude Code and
 
 ## Install
 
-### Option 1: One-liner (recommended)
+### Option 1: Desktop App (recommended)
+
+Download a pre-built installer from the [Releases](https://github.com/harrywang/agentfit/releases) page:
+
+- **macOS**: `AgentFit-x.x.x.dmg` (Intel) or `AgentFit-x.x.x-arm64.dmg` (Apple Silicon)
+- **Windows**: `AgentFit-x.x.x.exe`
+
+### Option 2: One-liner
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/harrywang/agentfit/main/setup.sh | bash
 ```
 
-### Option 2: npx
+### Option 3: npx
 
 ```bash
 npx agentfit
 ```
 
-### Option 3: Manual
+### Option 4: Manual
 
 ```bash
 git clone https://github.com/harrywang/agentfit.git
@@ -30,7 +37,7 @@ npm start
 
 Open [http://localhost:3000](http://localhost:3000). The app auto-syncs your Claude Code (`~/.claude/projects/`) and Codex (`~/.codex/sessions/`) logs on first load.
 
-**Requirements:** Node.js 20+
+**Requirements:** Node.js 20+ (Options 2–4)
 
 ## The CRAFT Framework
 
@@ -60,16 +67,14 @@ Inspired by [DORA Metrics](https://dora.dev) and Microsoft's [SPACE framework](h
 - **Images** — screenshot analysis across sessions
 - **Community Plugins** — extensible analysis views
 
-## Desktop App
+## Development
 
-Download a pre-built installer from the [Releases](https://github.com/harrywang/agentfit/releases) page, or build yourself:
+Build the desktop app locally:
 
 ```bash
 npm run electron:build:mac   # Mac (.dmg)
 npm run electron:build:win   # Windows (.exe)
 ```
-
-## Development
 
 ```bash
 npm run dev          # Start dev server (Turbopack)

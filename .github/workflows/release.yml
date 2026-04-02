@@ -12,7 +12,6 @@ jobs:
   build-mac:
     runs-on: macos-latest
     timeout-minutes: 30
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v6
 
@@ -38,20 +37,14 @@ jobs:
           rm certificate.p12
 
       - name: Build macOS DMGs
-        env:
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: npm run electron:build:mac
 
       - name: Upload DMGs
-        if: always()
         uses: actions/upload-artifact@v7
         with:
           name: mac-dmgs
           path: |
             dist-electron/*.dmg
-          if-no-files-found: ignore
 
   build-win:
     runs-on: windows-latest
@@ -78,14 +71,12 @@ jobs:
 
   release:
     needs: [build-mac, build-win]
-    if: always() && needs.build-win.result == 'success'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v8
         with:
           name: mac-dmgs
           path: artifacts
-        continue-on-error: true
 
       - uses: actions/download-artifact@v8
         with:

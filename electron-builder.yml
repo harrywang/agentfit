@@ -46,7 +46,7 @@ mac:
   gatekeeperAssess: false
   entitlements: electron/entitlements.mac.plist
   entitlementsInherit: electron/entitlements.mac.plist
-  notarize: true
+  notarize: false
   target:
     - target: dmg
       arch:

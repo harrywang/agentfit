@@ -36,13 +36,10 @@ if (!existsSync(generatedClient)) {
   run('npx prisma generate')
 }
 
-const dbPath = path.join(ROOT, 'agentfit.db')
-if (!existsSync(dbPath)) {
-  info('Creating database...')
-  run('npx prisma db push', {
-    env: { ...process.env, DATABASE_URL: 'file:./agentfit.db' },
-  })
-}
+// Run migrations — creates DB if new, applies pending migrations if existing.
+// migrate deploy is a no-op when already up to date.
+info('Applying database migrations...')
+run('npx prisma migrate deploy')
 
 // ─── Build if .next doesn't exist ───────────────────────────────────
 const nextDir = path.join(ROOT, '.next')

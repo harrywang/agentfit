@@ -1,6 +1,6 @@
-import { app, BrowserWindow, shell, dialog } from 'electron'
-import { execSync, spawn } from 'child_process'
-import { existsSync } from 'fs'
+import { app, BrowserWindow, shell, dialog, utilityProcess } from 'electron'
+import { existsSync, readFileSync } from 'fs'
+import { createRequire } from 'module'
 import path from 'path'
 import http from 'http'
 
@@ -36,11 +36,8 @@ process.on('uncaughtException', (err) => {
   throw err
 })
 
-function ensureDatabase() {
+async function ensureDatabase() {
   const schemaSQL = path.join(PRISMA_DIR, 'schema.sql')
-  const initScript = isPacked
-    ? path.join(process.resourcesPath, 'app.asar.unpacked', 'electron', 'init-db.mjs')
-    : path.join(import.meta.dirname, 'init-db.mjs')
 
   if (!existsSync(schemaSQL)) {
     throw new Error(`schema.sql not found at ${schemaSQL}. Run "npm run prisma:schema-sql" first.`)
@@ -48,22 +45,24 @@ function ensureDatabase() {
 
   log(existsSync(DB_PATH) ? 'Checking database schema...' : 'Creating database...')
 
-  // Run init-db.mjs using Electron's bundled Node.js runtime.
+  // Run DB init inline to avoid spawning a child Electron process,
+  // which causes a second dock icon on macOS.
   // Uses @libsql/client (already bundled) — works on macOS, Linux, and Windows.
   // schema.sql uses IF NOT EXISTS — safe to run on existing DBs.
   try {
-    execSync(
-      `"${process.execPath}" "${initScript}" "${DB_PATH}" "${schemaSQL}"`,
-      {
-        stdio: 'pipe',
-        timeout: 15000,
-        env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
-      }
-    )
+    const serverDir = isPacked
+      ? path.join(process.resourcesPath, 'app.asar.unpacked', 'electron', 'server')
+      : path.join(import.meta.dirname, 'server')
+    const require = createRequire(path.join(serverDir, 'package.json'))
+    const { createClient } = require('@libsql/client')
+
+    const client = createClient({ url: `file:${DB_PATH}` })
+    const sql = readFileSync(schemaSQL, 'utf-8')
+    await client.executeMultiple(sql)
+    client.close()
     log('Database ready.')
   } catch (err) {
-    const stderr = err.stderr?.toString() || err.message
-    log(`Database setup warning: ${stderr}`)
+    log(`Database setup warning: ${err.message}`)
   }
 }
 
@@ -78,14 +77,14 @@ function startServer() {
 
     log(`Starting server from ${serverJs}`)
 
-    // In packaged Electron, process.execPath is the Electron binary.
-    // We need to set ELECTRON_RUN_AS_NODE=1 so it acts as plain Node.js.
-    serverProcess = spawn(process.execPath, [serverJs], {
+    // Use utilityProcess.fork() instead of child_process.spawn() to avoid
+    // a second dock icon on macOS. It runs as a background Node.js process.
+    serverProcess = utilityProcess.fork(serverJs, [], {
       cwd: SERVER_DIR,
-      stdio: ['ignore', 'pipe', 'pipe'],
+      stdio: 'pipe',
+      serviceName: 'agentfit-server',
       env: {
         ...process.env,
-        ELECTRON_RUN_AS_NODE: '1',
         PORT: String(PORT),
         HOSTNAME: '127.0.0.1',
         DATABASE_URL: `file:${DB_PATH}`,
@@ -95,10 +94,6 @@ function startServer() {
 
     serverProcess.stdout?.on('data', (d) => log(d.toString().trim()))
     serverProcess.stderr?.on('data', (d) => log(d.toString().trim()))
-    serverProcess.on('error', (err) => {
-      log(`Server process error: ${err.message}`)
-      reject(err)
-    })
     serverProcess.on('exit', (code) => {
       if (code !== null && code !== 0) {
         log(`Server exited with code ${code}`)
@@ -171,7 +166,7 @@ app.whenReady().then(async () => {
   const splash = showSplash()
 
   try {
-    ensureDatabase()
+    await ensureDatabase()
     await startServer()
     splash.close()
     createWindow()
@@ -185,7 +180,7 @@ app.whenReady().then(async () => {
 
 app.on('window-all-closed', () => {
   if (serverProcess) {
-    serverProcess.kill('SIGTERM')
+    serverProcess.kill()
     serverProcess = null
   }
   app.quit()
@@ -193,7 +188,7 @@ app.on('window-all-closed', () => {
 
 app.on('before-quit', () => {
   if (serverProcess) {
-    serverProcess.kill('SIGTERM')
+    serverProcess.kill()
     serverProcess = null
   }
 })

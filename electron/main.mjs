@@ -1,4 +1,5 @@
 import { app, BrowserWindow, shell, dialog, utilityProcess } from 'electron'
+import { createServer } from 'net'
 import { existsSync, readFileSync } from 'fs'
 import { createRequire } from 'module'
 import path from 'path'
@@ -17,10 +18,21 @@ const PRISMA_DIR = isPacked
 
 const USER_DATA = app.getPath('userData')
 const DB_PATH = path.join(USER_DATA, 'agentfit.db')
-const PORT = 13749
+const PREFERRED_PORT = 13749
 
 let serverProcess = null
 let mainWindow = null
+let activePort = PREFERRED_PORT
+
+function findAvailablePort(startPort) {
+  return new Promise((resolve) => {
+    const server = createServer()
+    server.listen(startPort, '127.0.0.1', () => {
+      server.close(() => resolve(startPort))
+    })
+    server.on('error', () => resolve(findAvailablePort(startPort + 1)))
+  })
+}
 
 function log(msg) {
   try {
@@ -66,45 +78,49 @@ async function ensureDatabase() {
   }
 }
 
-function startServer() {
-  return new Promise((resolve, reject) => {
-    const serverJs = path.join(SERVER_DIR, 'server.js')
+async function startServer() {
+  const serverJs = path.join(SERVER_DIR, 'server.js')
 
-    if (!existsSync(serverJs)) {
-      reject(new Error(`Server not found at ${serverJs}. Run "npm run electron:prepare" first.`))
-      return
+  if (!existsSync(serverJs)) {
+    throw new Error(`Server not found at ${serverJs}. Run "npm run electron:prepare" first.`)
+  }
+
+  activePort = await findAvailablePort(PREFERRED_PORT)
+  if (activePort !== PREFERRED_PORT) {
+    log(`Port ${PREFERRED_PORT} is in use, using ${activePort} instead`)
+  }
+
+  log(`Starting server from ${serverJs}`)
+
+  // Use utilityProcess.fork() instead of child_process.spawn() to avoid
+  // a second dock icon on macOS. It runs as a background Node.js process.
+  serverProcess = utilityProcess.fork(serverJs, [], {
+    cwd: SERVER_DIR,
+    stdio: 'pipe',
+    serviceName: 'agentfit-server',
+    env: {
+      ...process.env,
+      PORT: String(activePort),
+      HOSTNAME: '127.0.0.1',
+      DATABASE_URL: `file:${DB_PATH}`,
+      NODE_ENV: 'production',
+    },
+  })
+
+  serverProcess.stdout?.on('data', (d) => log(d.toString().trim()))
+  serverProcess.stderr?.on('data', (d) => log(d.toString().trim()))
+  serverProcess.on('exit', (code) => {
+    if (code !== null && code !== 0) {
+      log(`Server exited with code ${code}`)
     }
+  })
 
-    log(`Starting server from ${serverJs}`)
-
-    // Use utilityProcess.fork() instead of child_process.spawn() to avoid
-    // a second dock icon on macOS. It runs as a background Node.js process.
-    serverProcess = utilityProcess.fork(serverJs, [], {
-      cwd: SERVER_DIR,
-      stdio: 'pipe',
-      serviceName: 'agentfit-server',
-      env: {
-        ...process.env,
-        PORT: String(PORT),
-        HOSTNAME: '127.0.0.1',
-        DATABASE_URL: `file:${DB_PATH}`,
-        NODE_ENV: 'production',
-      },
-    })
-
-    serverProcess.stdout?.on('data', (d) => log(d.toString().trim()))
-    serverProcess.stderr?.on('data', (d) => log(d.toString().trim()))
-    serverProcess.on('exit', (code) => {
-      if (code !== null && code !== 0) {
-        log(`Server exited with code ${code}`)
-      }
-    })
-
-    // Poll until ready
+  // Poll until ready
+  return new Promise((resolve, reject) => {
     let attempts = 0
     const check = () => {
       attempts++
-      http.get(`http://127.0.0.1:${PORT}`, () => resolve()).on('error', () => {
+      http.get(`http://127.0.0.1:${activePort}`, () => resolve()).on('error', () => {
         if (attempts >= 60) reject(new Error('Server failed to start within 30s'))
         else setTimeout(check, 500)
       })
@@ -126,7 +142,7 @@ function createWindow() {
     },
   })
 
-  mainWindow.loadURL(`http://127.0.0.1:${PORT}`)
+  mainWindow.loadURL(`http://127.0.0.1:${activePort}`)
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     shell.openExternal(url)

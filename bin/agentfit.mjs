@@ -1,13 +1,26 @@
 #!/usr/bin/env node
 
 import { execSync, spawn } from 'child_process'
+import { createServer } from 'net'
 import { existsSync, writeFileSync } from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const ROOT = path.resolve(__dirname, '..')
-const PORT = process.env.AGENTFIT_PORT || process.env.PORT || '3000'
+
+function findAvailablePort(startPort) {
+  return new Promise((resolve) => {
+    const server = createServer()
+    server.listen(startPort, () => {
+      server.close(() => resolve(startPort))
+    })
+    server.on('error', () => resolve(findAvailablePort(startPort + 1)))
+  })
+}
+
+const preferredPort = parseInt(process.env.AGENTFIT_PORT || process.env.PORT || '3000', 10)
+const PORT = await findAvailablePort(preferredPort)
 
 function info(msg) {
   console.log(`\x1b[1;34m==>\x1b[0m ${msg}`)
@@ -49,6 +62,9 @@ if (!existsSync(nextDir)) {
 }
 
 // ─── Start server ───────────────────────────────────────────────────
+if (PORT !== preferredPort) {
+  info(`Port ${preferredPort} is in use, using ${PORT} instead`)
+}
 ok(`Starting AgentFit on http://localhost:${PORT}`)
 console.log('  Press Ctrl+C to stop.\n')
 

@@ -31,7 +31,6 @@ npx agentfit
 git clone https://github.com/harrywang/agentfit.git
 cd agentfit
 npm install
-echo 'DATABASE_URL="file:./agentfit.db"' > .env
 npx prisma migrate deploy
 npm run build
 npm start
@@ -101,7 +100,6 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the full guide. Quick version:
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `PORT` or `AGENTFIT_PORT` | `3000` | Server port |
-| `DATABASE_URL` | `file:./agentfit.db` | SQLite database path |
 
 ## Credits
 

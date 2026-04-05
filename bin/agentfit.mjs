@@ -2,7 +2,7 @@
 
 import { execSync, spawn } from 'child_process'
 import { createServer } from 'net'
-import { existsSync, writeFileSync } from 'fs'
+import { existsSync } from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
 
@@ -34,12 +34,6 @@ function error(msg) {
 
 function run(cmd, opts = {}) {
   execSync(cmd, { cwd: ROOT, stdio: 'inherit', ...opts })
-}
-
-// ─── Ensure .env exists ─────────────────────────────────────────────
-const envPath = path.join(ROOT, '.env')
-if (!existsSync(envPath)) {
-  writeFileSync(envPath, 'DATABASE_URL="file:./agentfit.db"\n')
 }
 
 // ─── First-run setup: prisma generate + migrate ─────────────────────

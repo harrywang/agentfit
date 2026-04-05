@@ -50,8 +50,6 @@ npm install
 # ─── Database ────────────────────────────────────────────────────────
 
 info "Setting up database..."
-echo 'DATABASE_URL="file:./agentfit.db"' > .env
-npx prisma generate
 npx prisma migrate deploy
 
 # ─── Build ───────────────────────────────────────────────────────────

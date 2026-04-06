@@ -34,6 +34,7 @@ model Session {
   userInterruptions   Int      @default(0)
   permissionModesJson String   @default("{}") // JSON: {default:N, acceptEdits:N, bypassPermissions:N, plan:N}
   systemPromptEdits   Int      @default(0) // Edits/writes to CLAUDE.md, AGENTS.md, agent.md
+  cliVersion          String   @default("unknown") // Claude Code CLI version from JSONL logs
   createdAt           DateTime @default(now())
 
   @@index([project])
@@ -72,4 +73,18 @@ model Report {
   createdAt    DateTime @default(now())
 
   @@index([generatedAt])
+}
+
+model SessionAnalysis {
+  id              String   @id @default(cuid())
+  sessionId       String   @unique
+  model           String
+  classifications String   // JSON array of per-message classifications
+  totalMessages   Int
+  inputTokens     Int
+  outputTokens    Int
+  costUSD         Float
+  analyzedAt      DateTime @default(now())
+
+  @@index([sessionId])
 }

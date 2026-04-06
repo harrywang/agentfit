@@ -13,10 +13,12 @@ import {
   FolderOpen,
   GitBranch,
   HeartPulse,
+  Key,
   LayoutDashboard,
   ListTree,
   Puzzle,
   Settings,
+  Sparkles,
   Terminal,
   Wrench,
 } from 'lucide-react'
@@ -82,6 +84,7 @@ const navGroups: NavGroup[] = [
     items: [
       { title: 'Personality Fit', icon: Brain, href: '/personality' },
       { title: 'Session Flow', icon: GitBranch, href: '/flow' },
+      { title: 'AI Insights', icon: Sparkles, href: '/ai-insights' },
       { title: 'Image Analysis', icon: Camera, href: '/images' },
       { title: 'Reports', icon: FileText, href: '/reports' },
     ],
@@ -168,6 +171,15 @@ export function AppSidebar() {
                 >
                   <Settings className="h-4 w-4" />
                   <span>Data Management</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  render={<Link href="/settings" />}
+                  isActive={pathname === '/settings'}
+                >
+                  <Key className="h-4 w-4" />
+                  <span>Settings</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
             </SidebarMenu>

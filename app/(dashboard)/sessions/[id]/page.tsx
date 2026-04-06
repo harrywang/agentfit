@@ -4,9 +4,10 @@ import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { ArrowLeft, Clock, Coins, MessageSquare, Wrench, CheckCircle, XCircle } from 'lucide-react'
+import { ArrowLeft, Clock, Coins, MessageSquare, Wrench, CheckCircle, XCircle, Sparkles } from 'lucide-react'
 import { SessionWorkflow } from '@/components/session-workflow'
 import { SessionChatLog } from '@/components/session-chatlog'
+import { SessionAIAnalysis } from '@/components/session-ai-analysis'
 import type { SessionDetail } from '@/lib/session-detail'
 
 export default function SessionDetailPage() {
@@ -15,7 +16,7 @@ export default function SessionDetailPage() {
   const [detail, setDetail] = useState<SessionDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [activeTab, setActiveTab] = useState<'workflow' | 'dialog'>('dialog')
+  const [activeTab, setActiveTab] = useState<'dialog' | 'workflow' | 'ai'>('dialog')
 
   useEffect(() => {
     async function load() {
@@ -135,6 +136,17 @@ export default function SessionDetailPage() {
         >
           Workflow
         </button>
+        <button
+          onClick={() => setActiveTab('ai')}
+          className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors flex items-center gap-1 ${
+            activeTab === 'ai'
+              ? 'bg-primary text-primary-foreground'
+              : 'text-muted-foreground hover:text-foreground'
+          }`}
+        >
+          <Sparkles className="h-3 w-3" />
+          AI Analysis
+        </button>
       </div>
 
       {activeTab === 'dialog' && (
@@ -162,6 +174,8 @@ export default function SessionDetailPage() {
           </CardContent>
         </Card>
       )}
+
+      {activeTab === 'ai' && <SessionAIAnalysis sessionId={sessionId} />}
     </div>
   )
 }

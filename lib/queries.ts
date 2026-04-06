@@ -43,6 +43,7 @@ export async function getUsageData(): Promise<UsageData> {
     userInterruptions: s.userInterruptions,
     permissionModes: JSON.parse(s.permissionModesJson || '{}') as Record<string, number>,
     systemPromptEdits: s.systemPromptEdits,
+    cliVersion: s.cliVersion,
   }))
 
   // Aggregate projects

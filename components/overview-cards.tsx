@@ -219,7 +219,7 @@ export function OverviewCards({ overview, sessions }: { overview: OverviewStats;
     },
     {
       title: 'Top Model',
-      value: Object.entries(overview.models).sort((a, b) => b[1] - a[1])[0]?.[0] || 'N/A',
+      value: Object.entries(overview.models).filter(([k]) => k !== 'unknown').sort((a, b) => b[1] - a[1])[0]?.[0] || 'N/A',
       icon: Cpu,
       explanation: 'The Claude model used in the most sessions. Determined by the model field in assistant responses. If a session uses multiple models, the last one seen is recorded.',
     },

@@ -34,6 +34,7 @@ export interface SessionSummary {
   userInterruptions: number
   permissionModes: Record<string, number> // default, acceptEdits, bypassPermissions, plan
   systemPromptEdits: number // edits/writes to CLAUDE.md, AGENTS.md, agent.md
+  cliVersion: string // Claude Code CLI version from JSONL logs
 }
 
 export interface ProjectSummary {
@@ -125,6 +126,7 @@ function getProjectName(projectPath: string): string {
 
 interface LogEntry {
   type?: string
+  version?: string
   message?: {
     role?: string
     content?: unknown[]
@@ -161,6 +163,7 @@ function parseSessionFile(
     const toolCalls: Record<string, number> = {}
     const permissionModes: Record<string, number> = {}
     let systemPromptEdits = 0
+    let cliVersion = ''
 
     for (const line of lines) {
       if (!line.trim()) continue
@@ -175,6 +178,10 @@ function parseSessionFile(
       if (entry.timestamp) {
         if (!startTime) startTime = entry.timestamp
         endTime = entry.timestamp
+      }
+
+      if (entry.version && !cliVersion) {
+        cliVersion = entry.version
       }
 
       if (entry.type === 'user') {
@@ -267,6 +274,7 @@ function parseSessionFile(
       userInterruptions: 0,
       permissionModes,
       systemPromptEdits,
+      cliVersion: cliVersion || 'unknown',
     }
   } catch {
     return null

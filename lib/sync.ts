@@ -10,6 +10,7 @@ const IMAGES_DIR = path.resolve(process.cwd(), 'data', 'images')
 interface LogEntry {
   type?: string
   uuid?: string
+  version?: string
   message?: {
     role?: string
     content?: unknown[]
@@ -85,6 +86,7 @@ function parseSessionFile(
   const skillCalls: Record<string, number> = {}
   const permissionModes: Record<string, number> = {}
   let systemPromptEdits = 0
+  let cliVersion = ''
 
   for (const line of lines) {
     if (!line.trim()) continue
@@ -99,6 +101,10 @@ function parseSessionFile(
       if (!startTime) startTime = entry.timestamp
       endTime = entry.timestamp
       messageTimestamps.push(entry.timestamp)
+    }
+
+    if (entry.version && !cliVersion) {
+      cliVersion = entry.version
     }
 
     const entryType = entry.type
@@ -252,6 +258,7 @@ function parseSessionFile(
     skillCalls,
     permissionModes,
     systemPromptEdits,
+    cliVersion: cliVersion || 'unknown',
     images,
   }
 }
@@ -350,6 +357,7 @@ export async function syncLogs(): Promise<SyncResult> {
             userInterruptions: parsed.userInterruptions,
             permissionModesJson: JSON.stringify(parsed.permissionModes),
             systemPromptEdits: parsed.systemPromptEdits,
+            cliVersion: parsed.cliVersion,
           },
         })
 

@@ -4,6 +4,7 @@ import { useData } from '@/components/data-provider'
 import { FitnessScore } from '@/components/fitness-score'
 import { OverviewCards } from '@/components/overview-cards'
 import { DailyCostChart, TopCommandsChart, TokenUsageHeatmap, UserVsAssistantChart, InterruptionRateChart, ToolMixChart } from '@/components/daily-chart'
+import { VersionLagChart } from '@/components/version-lag-chart'
 import { RefreshCw } from 'lucide-react'
 
 export default function DashboardPage() {
@@ -36,6 +37,7 @@ export default function DashboardPage() {
         <UserVsAssistantChart daily={data.daily} />
         <InterruptionRateChart daily={data.daily} />
         <ToolMixChart daily={data.daily} />
+        <VersionLagChart sessions={data.sessions} />
       </div>
     </>
   )

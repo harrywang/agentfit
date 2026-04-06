@@ -164,6 +164,7 @@ export function parseCodexSession(filePath: string): SessionSummary | null {
       userInterruptions: 0,
       systemPromptEdits: 0,
       permissionModes: {},
+      cliVersion: 'codex',
     }
   } catch {
     return null

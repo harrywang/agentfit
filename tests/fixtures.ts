@@ -32,6 +32,7 @@ export function createMockSession(overrides: Partial<SessionSummary> = {}): Sess
     userInterruptions: 0,
     systemPromptEdits: 0,
     permissionModes: {},
+    cliVersion: '2.1.90',
     ...overrides,
   }
 }

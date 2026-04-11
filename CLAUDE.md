@@ -60,6 +60,10 @@ Prisma 7 with LibSQL adapter for SQLite (`agentfit.db` in project root). Three m
 
 After schema changes: run `npx prisma migrate dev` then `npx prisma generate`. The generated client lives in `generated/prisma/` (gitignored).
 
+**IMPORTANT — Electron DB schema:** The Electron app does NOT use Prisma migrations. It creates/updates the DB from `prisma/schema.sql` + inline `ALTER TABLE` statements in `electron/main.mjs`. After any schema change you MUST:
+1. Update `prisma/schema.sql` to match the current Prisma schema (all tables, columns, indexes)
+2. Add `ALTER TABLE … ADD COLUMN` statements to the migrations array in `electron/main.mjs` for any new columns, so existing users' databases get upgraded without data loss
+
 ### Key Conventions
 
 - Shadcn UI v4 with Base UI primitives (not Radix) — components in `components/ui/`

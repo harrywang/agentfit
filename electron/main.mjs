@@ -71,6 +71,17 @@ async function ensureDatabase() {
     const client = createClient({ url: `file:${DB_PATH}` })
     const sql = readFileSync(schemaSQL, 'utf-8')
     await client.executeMultiple(sql)
+
+    // Add missing columns for existing databases (IF NOT EXISTS is not supported
+    // for ALTER TABLE in SQLite, so we catch and ignore "duplicate column" errors)
+    const migrations = [
+      'ALTER TABLE "Session" ADD COLUMN "cliVersion" TEXT NOT NULL DEFAULT \'unknown\'',
+      'ALTER TABLE "Session" ADD COLUMN "modelCountsJson" TEXT NOT NULL DEFAULT \'{}\'',
+    ]
+    for (const stmt of migrations) {
+      try { await client.execute(stmt) } catch { /* column already exists */ }
+    }
+
     client.close()
     log('Database ready.')
   } catch (err) {

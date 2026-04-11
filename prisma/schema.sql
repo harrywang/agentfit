@@ -26,6 +26,8 @@ CREATE TABLE IF NOT EXISTS "Session" (
     "userInterruptions" INTEGER NOT NULL DEFAULT 0,
     "permissionModesJson" TEXT NOT NULL DEFAULT '{}',
     "systemPromptEdits" INTEGER NOT NULL DEFAULT 0,
+    "cliVersion" TEXT NOT NULL DEFAULT 'unknown',
+    "modelCountsJson" TEXT NOT NULL DEFAULT '{}',
     "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -61,6 +63,19 @@ CREATE TABLE IF NOT EXISTS "Report" (
     "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+-- CreateTable
+CREATE TABLE IF NOT EXISTS "SessionAnalysis" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "sessionId" TEXT NOT NULL,
+    "model" TEXT NOT NULL,
+    "classifications" TEXT NOT NULL,
+    "totalMessages" INTEGER NOT NULL,
+    "inputTokens" INTEGER NOT NULL,
+    "outputTokens" INTEGER NOT NULL,
+    "costUSD" REAL NOT NULL,
+    "analyzedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 -- CreateIndex
 CREATE UNIQUE INDEX IF NOT EXISTS "Session_sessionId_key" ON "Session"("sessionId");
 
@@ -79,3 +94,8 @@ CREATE UNIQUE INDEX IF NOT EXISTS "Image_sessionId_messageId_filename_key" ON "I
 -- CreateIndex
 CREATE INDEX IF NOT EXISTS "Report_generatedAt_idx" ON "Report"("generatedAt");
 
+-- CreateIndex
+CREATE UNIQUE INDEX IF NOT EXISTS "SessionAnalysis_sessionId_key" ON "SessionAnalysis"("sessionId");
+
+-- CreateIndex
+CREATE INDEX IF NOT EXISTS "SessionAnalysis_sessionId_idx" ON "SessionAnalysis"("sessionId");

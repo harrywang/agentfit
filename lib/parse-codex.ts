@@ -156,6 +156,7 @@ export function parseCodexSession(filePath: string): SessionSummary | null {
       totalTokens,
       costUSD: 0, // Codex doesn't expose per-session costs in logs
       model: model || 'gpt-5',
+      modelCounts: model ? { [model]: assistantMessages } : { 'gpt-5': assistantMessages },
       toolCalls,
       toolCallsTotal: Object.values(toolCalls).reduce((a, b) => a + b, 0),
       skillCalls: {},

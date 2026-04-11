@@ -131,8 +131,10 @@ function filterData(raw: UsageData | null, range: TimeRange, project: string): U
       toolUsage[tool] = (toolUsage[tool] || 0) + count
     }
 
-    // Models
-    models[s.model] = (models[s.model] || 0) + 1
+    // Models — aggregate at message level
+    for (const [m, count] of Object.entries(s.modelCounts || {})) {
+      models[m] = (models[m] || 0) + count
+    }
   }
 
   const projects = Array.from(projectMap.values()).sort((a, b) => b.totalCost - a.totalCost)

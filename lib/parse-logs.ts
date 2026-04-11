@@ -25,6 +25,7 @@ export interface SessionSummary {
   totalTokens: number
   costUSD: number
   model: string
+  modelCounts: Record<string, number> // per-message model counts
   toolCalls: Record<string, number>
   toolCallsTotal: number
   skillCalls: Record<string, number>
@@ -157,7 +158,8 @@ function parseSessionFile(
     let cacheCreationTokens = 0
     let cacheReadTokens = 0
     let costUSD = 0
-    let model = ''
+    let currentModel = '' // tracks model for cost calculation per message
+    const modelCounts: Record<string, number> = {} // count messages per model
     let startTime = ''
     let endTime = ''
     const toolCalls: Record<string, number> = {}
@@ -197,7 +199,8 @@ function parseSessionFile(
 
         // Model
         if (msg.model && msg.model !== '<synthetic>') {
-          model = msg.model
+          currentModel = msg.model
+          modelCounts[msg.model] = (modelCounts[msg.model] || 0) + 1
         }
 
         // Usage
@@ -208,8 +211,8 @@ function parseSessionFile(
           cacheCreationTokens += u.cache_creation_input_tokens || 0
           cacheReadTokens += u.cache_read_input_tokens || 0
 
-          if (model) {
-            costUSD += calculateCost(model, u, allPricing)
+          if (currentModel) {
+            costUSD += calculateCost(currentModel, u, allPricing)
           }
         }
 
@@ -265,7 +268,8 @@ function parseSessionFile(
       cacheReadTokens,
       totalTokens: inputTokens + outputTokens + cacheCreationTokens + cacheReadTokens,
       costUSD,
-      model: model || 'unknown',
+      model: Object.entries(modelCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || 'unknown',
+      modelCounts,
       toolCalls,
       toolCallsTotal: Object.values(toolCalls).reduce((a, b) => a + b, 0),
       skillCalls: {},
@@ -392,10 +396,12 @@ export async function parseAllLogs(): Promise<UsageData> {
   // Build projects array sorted by cost desc
   const projects = Array.from(projectMap.values()).sort((a, b) => b.totalCost - a.totalCost)
 
-  // Build overview
+  // Build overview — aggregate model counts at message level
   const models: Record<string, number> = {}
   for (const s of sessions) {
-    models[s.model] = (models[s.model] || 0) + 1
+    for (const [m, count] of Object.entries(s.modelCounts)) {
+      models[m] = (models[m] || 0) + count
+    }
   }
 
   const overview: OverviewStats = {

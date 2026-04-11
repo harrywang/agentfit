@@ -9,6 +9,7 @@ import {
   Camera,
   ChevronRight,
   Coins,
+  Cpu,
   FileText,
   FolderOpen,
   GitBranch,
@@ -76,6 +77,7 @@ const navGroups: NavGroup[] = [
       { title: 'Token Breakdown', icon: Coins, href: '/tokens' },
       { title: 'Tool Usage', icon: Wrench, href: '/tools' },
       { title: 'Command Usage', icon: Terminal, href: '/commands' },
+      { title: 'Model Usage', icon: Cpu, href: '/models' },
     ],
   },
   {

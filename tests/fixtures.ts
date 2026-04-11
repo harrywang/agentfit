@@ -24,6 +24,7 @@ export function createMockSession(overrides: Partial<SessionSummary> = {}): Sess
     totalTokens: 8500,
     costUSD: 0.15,
     model: 'claude-sonnet-4-20250514',
+    modelCounts: { 'claude-sonnet-4-20250514': 5 },
     toolCalls: { Read: 3, Edit: 2, Bash: 1 },
     toolCallsTotal: 6,
     skillCalls: {},

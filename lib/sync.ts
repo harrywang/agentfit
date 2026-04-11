@@ -74,7 +74,8 @@ function parseSessionFile(
   let cacheCreationTokens = 0
   let cacheReadTokens = 0
   let costUSD = 0
-  let model = ''
+  let currentModel = '' // tracks model for cost calculation per message
+  const modelCounts: Record<string, number> = {} // count messages per model
   let startTime = ''
   let endTime = ''
   const toolCalls: Record<string, number> = {}
@@ -151,7 +152,8 @@ function parseSessionFile(
       }
 
       if (msg.model && msg.model !== '<synthetic>') {
-        model = msg.model
+        currentModel = msg.model
+        modelCounts[msg.model] = (modelCounts[msg.model] || 0) + 1
       }
 
       if (msg.usage) {
@@ -160,8 +162,8 @@ function parseSessionFile(
         outputTokens += u.output_tokens || 0
         cacheCreationTokens += u.cache_creation_input_tokens || 0
         cacheReadTokens += u.cache_read_input_tokens || 0
-        if (model) {
-          costUSD += calculateCost(model, u, allPricing)
+        if (currentModel) {
+          costUSD += calculateCost(currentModel, u, allPricing)
         }
       }
     }
@@ -248,7 +250,8 @@ function parseSessionFile(
     cacheReadTokens,
     totalTokens: inputTokens + outputTokens + cacheCreationTokens + cacheReadTokens,
     costUSD,
-    model: model || 'unknown',
+    model: Object.entries(modelCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || 'unknown',
+    modelCounts,
     toolCalls,
     toolCallsTotal: Object.values(toolCalls).reduce((a, b) => a + b, 0),
     messageTimestamps,
@@ -358,6 +361,7 @@ export async function syncLogs(): Promise<SyncResult> {
             permissionModesJson: JSON.stringify(parsed.permissionModes),
             systemPromptEdits: parsed.systemPromptEdits,
             cliVersion: parsed.cliVersion,
+            modelCountsJson: JSON.stringify(parsed.modelCounts),
           },
         })
 

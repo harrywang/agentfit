@@ -44,6 +44,7 @@ export async function getUsageData(): Promise<UsageData> {
     permissionModes: JSON.parse(s.permissionModesJson || '{}') as Record<string, number>,
     systemPromptEdits: s.systemPromptEdits,
     cliVersion: s.cliVersion,
+    modelCounts: JSON.parse(s.modelCountsJson || '{}') as Record<string, number>,
   }))
 
   // Aggregate projects
@@ -127,7 +128,9 @@ export async function getUsageData(): Promise<UsageData> {
   const skillUsage: Record<string, number> = {}
   const permissionModes: Record<string, number> = {}
   for (const s of sessions) {
-    models[s.model] = (models[s.model] || 0) + 1
+    for (const [m, count] of Object.entries(s.modelCounts)) {
+      models[m] = (models[m] || 0) + count
+    }
     for (const [skill, count] of Object.entries(s.skillCalls)) {
       skillUsage[skill] = (skillUsage[skill] || 0) + count
     }

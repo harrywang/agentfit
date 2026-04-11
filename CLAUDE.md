@@ -10,6 +10,7 @@ npm run build        # Production build
 npm run lint         # ESLint
 npm run format       # Prettier
 npm run typecheck    # TypeScript check
+npm run electron:build:mac  # Build signed+notarized macOS DMG
 npx prisma migrate dev --name <name>  # Create/apply migration
 npx prisma generate  # Regenerate Prisma client after schema changes
 ```
@@ -67,6 +68,10 @@ After schema changes: run `npx prisma migrate dev` then `npx prisma generate`. T
 - `lib/format.ts` has shared formatters (cost, tokens, duration) — use these, don't inline formatting
 - Images served via `/api/images/[...path]` catch-all route from `data/images/`
 - `data/images/` and `agentfit.db` are gitignored — local data only
+
+### Desktop Distribution
+
+Electron app built via electron-builder. macOS DMGs are code-signed and notarized via GitHub Actions (`release.yml`, triggered by `v*` tags). Notarization requires three GitHub secrets: `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID` (in addition to `CERTIFICATE_P12` and `CERTIFICATE_PASSWORD` for signing).
 
 ### Coaching Philosophy
 

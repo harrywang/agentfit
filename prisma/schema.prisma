@@ -35,6 +35,7 @@ model Session {
   permissionModesJson String   @default("{}") // JSON: {default:N, acceptEdits:N, bypassPermissions:N, plan:N}
   systemPromptEdits   Int      @default(0) // Edits/writes to CLAUDE.md, AGENTS.md, agent.md
   cliVersion          String   @default("unknown") // Claude Code CLI version from JSONL logs
+  modelCountsJson     String   @default("{}") // JSON: {model_name: message_count}
   createdAt           DateTime @default(now())
 
   @@index([project])

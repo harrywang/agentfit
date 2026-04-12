@@ -3,7 +3,7 @@ import { PrismaLibSql } from '@prisma/adapter-libsql'
 import path from 'path'
 
 function createPrisma() {
-  const dbUrl = `file:${path.resolve(process.cwd(), 'agentfit.db')}`
+  const dbUrl = process.env.DATABASE_URL || `file:${path.resolve(process.cwd(), 'agentfit.db')}`
   const adapter = new PrismaLibSql({ url: dbUrl })
   return new PrismaClient({ adapter })
 }

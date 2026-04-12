@@ -99,3 +99,4 @@ CREATE UNIQUE INDEX IF NOT EXISTS "SessionAnalysis_sessionId_key" ON "SessionAna
 
 -- CreateIndex
 CREATE INDEX IF NOT EXISTS "SessionAnalysis_sessionId_idx" ON "SessionAnalysis"("sessionId");
+

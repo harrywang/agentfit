@@ -107,4 +107,4 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the full guide. Quick version:
 
 ## License
 
-[MIT](LICENSE)
+[AGPL-3.0](LICENSE)

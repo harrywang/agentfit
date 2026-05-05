@@ -33,9 +33,9 @@ AgentFit is a local-first Next.js 16 dashboard that reads Claude Code and Codex 
                               Dashboard pages + charts
 ```
 
-- **Sync** (`lib/sync.ts`): Scans JSONL files, skips already-imported sessions (by sessionId), parses messages/tokens/tool calls, extracts base64 images to `data/images/{sessionId}/`, calculates costs via LiteLLM pricing, writes to SQLite.
-- **Queries** (`lib/queries.ts`): Reads sessions from SQLite, aggregates into projects/daily/toolUsage/overview stats. Codex logs (`lib/queries-codex.ts`) are parsed live without DB storage.
-- **Pricing** (`lib/pricing.ts`): Fetches model pricing from LiteLLM's GitHub JSON at runtime, falls back to hardcoded prices if fetch fails.
+- **Sync** (`lib/sync.ts`): Recursively walks `**/*.jsonl` under each project dir (top-level conversations + nested `subagents/agent-*.jsonl` files), parses every line on every run, writes per-message `MessageUsage` rows deduped by `(messageId, requestId)`, upserts the per-conversation `Session` row, extracts base64 images to `data/images/{sessionId}/`. Final SQL pass rolls sub-agent token/cost sums up into the parent `Session` row.
+- **Queries** (`lib/queries.ts`): Daily breakdown + overview cost/token totals come from `MessageUsage` (deduped, per-(date, model)). Per-session counters (sessions, user/assistant messages, tool calls, interruptions) come from `Session`. Codex logs (`lib/queries-codex.ts`) are parsed live without DB storage.
+- **Pricing** (`lib/pricing.ts`): Fetches LiteLLM JSON at runtime, falls back to hardcoded prices. Applies 200k tiered pricing and the `speed=fast` provider multiplier (ported from ccusage, MIT). Unknown models return 0 cost — no silent Sonnet fallback.
 
 ### Client State
 
@@ -53,16 +53,31 @@ AgentFit is a local-first Next.js 16 dashboard that reads Claude Code and Codex 
 
 ### Database
 
-Prisma 7 with LibSQL adapter for SQLite (`agentfit.db` in project root). Three models:
-- **Session** — metrics per conversation (tokens, cost, duration, tool calls as JSON string)
+Prisma 7 with LibSQL adapter for SQLite (`agentfit.db` in project root). Core models:
+- **Session** — metrics per conversation (one row per top-level JSONL). Token/cost columns are derived — they get rebuilt from `MessageUsage` at the end of every sync, so don't treat them as authoritative.
+- **MessageUsage** — one row per assistant message with `(messageId, requestId)` unique. This is the source of truth for daily totals and cost. Sub-agent rows attribute to the parent's `sessionId` via the per-line `sessionId` field in the JSONL.
 - **Image** — extracted screenshot metadata (files stored on disk, not in DB)
 - **SyncLog** — sync history
 
 After schema changes: run `npx prisma migrate dev` then `npx prisma generate`. The generated client lives in `generated/prisma/` (gitignored).
 
 **IMPORTANT — Electron DB schema:** The Electron app does NOT use Prisma migrations. It creates/updates the DB from `prisma/schema.sql` + inline `ALTER TABLE` statements in `electron/main.mjs`. After any schema change you MUST:
-1. Update `prisma/schema.sql` to match the current Prisma schema (all tables, columns, indexes)
-2. Add `ALTER TABLE … ADD COLUMN` statements to the migrations array in `electron/main.mjs` for any new columns, so existing users' databases get upgraded without data loss
+1. Update `prisma/schema.sql` to match the current Prisma schema (all tables, columns, indexes). New tables use `CREATE TABLE IF NOT EXISTS` so they pick up automatically on next launch.
+2. For new *columns* on existing tables, add `ALTER TABLE … ADD COLUMN` statements to the migrations array in `electron/main.mjs` so existing users' databases get upgraded without data loss.
+
+### Why daily totals match ccusage
+
+The daily breakdown is designed to agree with `ccusage daily` to the cent. If you change the sync or aggregation, validate with:
+
+```bash
+node /Users/harrywang/sandbox/ccusage/apps/ccusage/dist/index.js daily --since YYYYMMDD --until YYYYMMDD --json
+```
+
+Non-obvious invariants that make this work — don't break them:
+- **Always re-read every JSONL.** Claude Code appends to the same file throughout a session, so a "skip if sessionId already imported" cache permanently freezes partial counts. Idempotency comes from the `(messageId, requestId)` unique index on `MessageUsage`, not from skipping files.
+- **Recurse into `subagents/`.** Sub-agent JSONLs (`<sessionDir>/subagents/agent-*.jsonl`) carry haiku/opus token usage that's missing from the top-level file. Ours and ccusage's totals only agree when these are included.
+- **Local-timezone date bucket.** Use `Intl.DateTimeFormat('en-CA')` with no `timeZone` option (matches ccusage `apps/ccusage/src/_date-utils.ts:43-48`). Switching to `toISOString().slice(0,10)` (UTC) shifts cross-midnight tokens to the wrong day and breaks parity.
+- **Per-message tiered pricing + `speed=fast` multiplier.** Any cost calculation must use `lib/pricing.ts:calculateCost(model, usage, pricing, speed)` — the 200k tier and 6× Opus-fast multiplier matter.
 
 ### Key Conventions
 

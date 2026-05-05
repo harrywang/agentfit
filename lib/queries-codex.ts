@@ -64,6 +64,7 @@ export function getCodexUsageData(): UsageData {
         toolCallsDetail: {},
         interruptions: 0,
         rateLimitErrors: 0,
+        modelBreakdowns: [],
       })
     }
     const daily = dailyMap.get(date)!

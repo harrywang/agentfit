@@ -55,6 +55,7 @@ export function createMockDaily(overrides: Partial<DailyUsage> = {}): DailyUsage
     toolCallsDetail: { Read: 9, Edit: 6, Bash: 3 },
     interruptions: 0,
     rateLimitErrors: 0,
+    modelBreakdowns: [],
     ...overrides,
   }
 }

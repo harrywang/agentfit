@@ -106,6 +106,10 @@ function filterData(raw: UsageData | null, range: TimeRange, project: string): U
         cacheCreationTokens: 0, cacheReadTokens: 0,
         totalTokens: 0, costUSD: 0, toolCalls: 0,
         toolCallsDetail: {}, interruptions: 0, rateLimitErrors: 0,
+        // Client-side rebuild: per-(date, model) breakdown is not derivable
+        // from session-level rows. The unfiltered case (project=all,
+        // range=all) returns raw and preserves the server's breakdowns.
+        modelBreakdowns: [],
       })
     }
     const day = dailyMap.get(date)!

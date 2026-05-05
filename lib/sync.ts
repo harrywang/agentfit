@@ -2,16 +2,28 @@ import fs from 'fs'
 import path from 'path'
 import os from 'os'
 import { prisma } from './db'
-import { loadPricing, calculateCost, type ModelPricing } from './pricing'
+import { loadPricing, calculateCost, type ModelPricing, type Speed } from './pricing'
 
 const PROJECTS_DIR = path.join(os.homedir(), '.claude', 'projects')
 const IMAGES_DIR = path.resolve(process.cwd(), 'data', 'images')
+
+// Bucket per-message timestamps using the user's *local* timezone so daily
+// totals match ccusage (apps/ccusage/src/_date-utils.ts:43-48). en-CA yields
+// YYYY-MM-DD without zero-padding surprises.
+const DATE_FORMATTER = new Intl.DateTimeFormat('en-CA', {
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+})
 
 interface LogEntry {
   type?: string
   uuid?: string
   version?: string
+  requestId?: string
+  sessionId?: string
   message?: {
+    id?: string
     role?: string
     content?: unknown[]
     model?: string
@@ -20,9 +32,25 @@ interface LogEntry {
       output_tokens?: number
       cache_creation_input_tokens?: number
       cache_read_input_tokens?: number
+      speed?: Speed
     }
   }
   timestamp?: string
+}
+
+interface MessageUsageRow {
+  sessionId: string
+  messageId: string
+  requestId: string
+  model: string
+  speed: Speed
+  timestamp: Date
+  date: string
+  inputTokens: number
+  outputTokens: number
+  cacheCreationTokens: number
+  cacheReadTokens: number
+  costUSD: number
 }
 
 interface ImageInfo {
@@ -36,6 +64,33 @@ interface ImageInfo {
 
 function decodeProjectPath(dirName: string): string {
   return dirName.replace(/-/g, '/')
+}
+
+interface WalkedFile {
+  absPath: string
+  isSubagent: boolean
+}
+
+function walkJsonl(dir: string, projectRoot: string): WalkedFile[] {
+  const out: WalkedFile[] = []
+  let entries: fs.Dirent[]
+  try {
+    entries = fs.readdirSync(dir, { withFileTypes: true })
+  } catch {
+    return out
+  }
+  for (const e of entries) {
+    const full = path.join(dir, e.name)
+    if (e.isDirectory()) {
+      out.push(...walkJsonl(full, projectRoot))
+    } else if (e.isFile() && e.name.endsWith('.jsonl')) {
+      // A file is "subagent" if it sits below the project root (not directly
+      // in it). ccusage uses **/*.jsonl for the same effect.
+      const isSubagent = path.dirname(full) !== projectRoot
+      out.push({ absPath: full, isSubagent })
+    }
+  }
+  return out
 }
 
 function getProjectName(projectPath: string): string {
@@ -81,6 +136,7 @@ function parseSessionFile(
   const toolCalls: Record<string, number> = {}
   const images: ImageInfo[] = []
   const messageTimestamps: string[] = []
+  const messageUsages: MessageUsageRow[] = []
   let apiErrors = 0
   let rateLimitErrors = 0
   let userInterruptions = 0
@@ -158,12 +214,41 @@ function parseSessionFile(
 
       if (msg.usage) {
         const u = msg.usage
-        inputTokens += u.input_tokens || 0
-        outputTokens += u.output_tokens || 0
-        cacheCreationTokens += u.cache_creation_input_tokens || 0
-        cacheReadTokens += u.cache_read_input_tokens || 0
-        if (currentModel) {
-          costUSD += calculateCost(currentModel, u, allPricing)
+        const speed: Speed = u.speed === 'fast' ? 'fast' : 'standard'
+        const inT = u.input_tokens || 0
+        const outT = u.output_tokens || 0
+        const ccT = u.cache_creation_input_tokens || 0
+        const crT = u.cache_read_input_tokens || 0
+        const msgCost = currentModel ? calculateCost(currentModel, u, allPricing, speed) : 0
+
+        inputTokens += inT
+        outputTokens += outT
+        cacheCreationTokens += ccT
+        cacheReadTokens += crT
+        costUSD += msgCost
+
+        // Per-message row for daily aggregation. Dedup by (messageId, requestId)
+        // happens at insert time via the unique index. Mirrors ccusage's
+        // createUniqueHash (apps/ccusage/src/data-loader.ts:530-540).
+        if (currentModel && msg.id && entry.requestId && entry.timestamp) {
+          const ts = new Date(entry.timestamp)
+          messageUsages.push({
+            // Subagent files have filename basename "agent-<hash>" but carry
+            // the parent session's sessionId on every line — use that so
+            // sub-agent token usage rolls up to the parent Session row.
+            sessionId: entry.sessionId || sessionId,
+            messageId: msg.id,
+            requestId: entry.requestId,
+            model: currentModel,
+            speed,
+            timestamp: ts,
+            date: DATE_FORMATTER.format(ts),
+            inputTokens: inT,
+            outputTokens: outT,
+            cacheCreationTokens: ccT,
+            cacheReadTokens: crT,
+            costUSD: msgCost,
+          })
         }
       }
     }
@@ -263,6 +348,7 @@ function parseSessionFile(
     systemPromptEdits,
     cliVersion: cliVersion || 'unknown',
     images,
+    messageUsages,
   }
 }
 
@@ -293,10 +379,10 @@ export async function syncLogs(): Promise<SyncResult> {
     fs.mkdirSync(IMAGES_DIR, { recursive: true })
   }
 
-  // Get all existing sessionIds to skip
-  const existing = await prisma.session.findMany({ select: { sessionId: true } })
-  const existingIds = new Set(existing.map((s) => s.sessionId))
-
+  // We always re-read every JSONL — Claude Code appends to the same file
+  // throughout a long session, so a one-shot import would freeze the partial
+  // state. Idempotency comes from the (messageId, requestId) unique index on
+  // MessageUsage and from upserting Session by sessionId.
   const projectDirs = fs.readdirSync(PROJECTS_DIR).filter((d) => {
     try {
       return fs.statSync(path.join(PROJECTS_DIR, d)).isDirectory()
@@ -310,75 +396,119 @@ export async function syncLogs(): Promise<SyncResult> {
     const projectName = getProjectName(projectPath)
     const dirPath = path.join(PROJECTS_DIR, dir)
 
-    let jsonlFiles: string[]
-    try {
-      jsonlFiles = fs.readdirSync(dirPath).filter((f) => f.endsWith('.jsonl'))
-    } catch {
-      continue
-    }
+    // Recurse for *.jsonl. Top-level files are standalone conversations
+    // (filename = sessionId). Files under <session>/subagents/ carry the
+    // parent's sessionId on each line; we only mine them for MessageUsage.
+    const jsonlFiles = walkJsonl(dirPath, dirPath)
 
-    for (const file of jsonlFiles) {
+    for (const { absPath, isSubagent } of jsonlFiles) {
       result.filesProcessed++
-      const sessionId = path.basename(file, '.jsonl')
-
-      if (existingIds.has(sessionId)) {
-        result.sessionsSkipped++
-        continue
-      }
+      const sessionId = path.basename(absPath, '.jsonl')
 
       try {
-        const parsed = parseSessionFile(path.join(dirPath, file), sessionId, allPricing)
+        const parsed = parseSessionFile(absPath, sessionId, allPricing)
         if (!parsed) {
           result.sessionsSkipped++
           continue
         }
 
-        await prisma.session.create({
-          data: {
-            sessionId,
-            project: projectName,
-            projectPath,
-            startTime: new Date(parsed.startTime),
-            endTime: new Date(parsed.endTime),
-            durationMinutes: parsed.durationMinutes,
-            userMessages: parsed.userMessages,
-            assistantMessages: parsed.assistantMessages,
-            totalMessages: parsed.totalMessages,
-            inputTokens: parsed.inputTokens,
-            outputTokens: parsed.outputTokens,
-            cacheCreationTokens: parsed.cacheCreationTokens,
-            cacheReadTokens: parsed.cacheReadTokens,
-            totalTokens: parsed.totalTokens,
-            costUSD: parsed.costUSD,
-            model: parsed.model,
-            toolCallsTotal: parsed.toolCallsTotal,
-            toolCallsJson: JSON.stringify(parsed.toolCalls),
-            skillCallsJson: JSON.stringify(parsed.skillCalls),
-            messageTimestamps: JSON.stringify(parsed.messageTimestamps),
-            apiErrors: parsed.apiErrors,
-            rateLimitErrors: parsed.rateLimitErrors,
-            userInterruptions: parsed.userInterruptions,
-            permissionModesJson: JSON.stringify(parsed.permissionModes),
-            systemPromptEdits: parsed.systemPromptEdits,
-            cliVersion: parsed.cliVersion,
-            modelCountsJson: JSON.stringify(parsed.modelCounts),
-          },
+        // Subagent files contribute MessageUsage only — the conversation
+        // itself is owned by the top-level JSONL.
+        if (isSubagent) {
+          for (const m of parsed.messageUsages) {
+            await prisma.$executeRaw`
+              INSERT OR IGNORE INTO "MessageUsage" (
+                "id", "sessionId", "messageId", "requestId", "model", "speed",
+                "timestamp", "date",
+                "inputTokens", "outputTokens", "cacheCreationTokens", "cacheReadTokens",
+                "costUSD", "createdAt"
+              ) VALUES (
+                ${`mu_${m.messageId}_${m.requestId}`}, ${m.sessionId}, ${m.messageId}, ${m.requestId},
+                ${m.model}, ${m.speed},
+                ${m.timestamp.toISOString()}, ${m.date},
+                ${m.inputTokens}, ${m.outputTokens}, ${m.cacheCreationTokens}, ${m.cacheReadTokens},
+                ${m.costUSD}, ${new Date().toISOString()}
+              )
+            `
+          }
+          result.sessionsAdded++
+          continue
+        }
+
+        const sessionData = {
+          project: projectName,
+          projectPath,
+          startTime: new Date(parsed.startTime),
+          endTime: new Date(parsed.endTime),
+          durationMinutes: parsed.durationMinutes,
+          userMessages: parsed.userMessages,
+          assistantMessages: parsed.assistantMessages,
+          totalMessages: parsed.totalMessages,
+          inputTokens: parsed.inputTokens,
+          outputTokens: parsed.outputTokens,
+          cacheCreationTokens: parsed.cacheCreationTokens,
+          cacheReadTokens: parsed.cacheReadTokens,
+          totalTokens: parsed.totalTokens,
+          costUSD: parsed.costUSD,
+          model: parsed.model,
+          toolCallsTotal: parsed.toolCallsTotal,
+          toolCallsJson: JSON.stringify(parsed.toolCalls),
+          skillCallsJson: JSON.stringify(parsed.skillCalls),
+          messageTimestamps: JSON.stringify(parsed.messageTimestamps),
+          apiErrors: parsed.apiErrors,
+          rateLimitErrors: parsed.rateLimitErrors,
+          userInterruptions: parsed.userInterruptions,
+          permissionModesJson: JSON.stringify(parsed.permissionModes),
+          systemPromptEdits: parsed.systemPromptEdits,
+          cliVersion: parsed.cliVersion,
+          modelCountsJson: JSON.stringify(parsed.modelCounts),
+        }
+
+        await prisma.session.upsert({
+          where: { sessionId },
+          create: { sessionId, ...sessionData },
+          update: sessionData,
         })
+
+        // Per-message usage rows. Unique index on (messageId, requestId) makes
+        // this idempotent across re-syncs and dedupes forks/resumes that copy
+        // prior turns into new JSONLs. Use SQLite's INSERT OR IGNORE because
+        // Prisma createMany on libsql doesn't expose skipDuplicates.
+        for (const m of parsed.messageUsages) {
+          await prisma.$executeRaw`
+            INSERT OR IGNORE INTO "MessageUsage" (
+              "id", "sessionId", "messageId", "requestId", "model", "speed",
+              "timestamp", "date",
+              "inputTokens", "outputTokens", "cacheCreationTokens", "cacheReadTokens",
+              "costUSD", "createdAt"
+            ) VALUES (
+              ${`mu_${m.messageId}_${m.requestId}`}, ${m.sessionId}, ${m.messageId}, ${m.requestId},
+              ${m.model}, ${m.speed},
+              ${m.timestamp.toISOString()}, ${m.date},
+              ${m.inputTokens}, ${m.outputTokens}, ${m.cacheCreationTokens}, ${m.cacheReadTokens},
+              ${m.costUSD}, ${new Date().toISOString()}
+            )
+          `
+        }
 
         // Insert image records
         for (const img of parsed.images) {
-          await prisma.image.create({
-            data: {
-              sessionId,
-              messageId: img.messageId,
-              filename: img.filename,
-              mediaType: img.mediaType,
-              sizeBytes: img.sizeBytes,
-              timestamp: new Date(img.timestamp),
-              role: img.role,
-            },
-          })
-          result.imagesExtracted++
+          try {
+            await prisma.image.create({
+              data: {
+                sessionId,
+                messageId: img.messageId,
+                filename: img.filename,
+                mediaType: img.mediaType,
+                sizeBytes: img.sizeBytes,
+                timestamp: new Date(img.timestamp),
+                role: img.role,
+              },
+            })
+            result.imagesExtracted++
+          } catch {
+            // Unique constraint — already imported on a prior sync.
+          }
         }
 
         result.sessionsAdded++
@@ -387,6 +517,21 @@ export async function syncLogs(): Promise<SyncResult> {
       }
     }
   }
+
+  // Roll up sub-agent contributions into the parent Session row so per-session
+  // tokens/cost reflect total work (top-level + subagents).
+  await prisma.$executeRaw`
+    UPDATE "Session" SET
+      "inputTokens"         = COALESCE((SELECT SUM("inputTokens")         FROM "MessageUsage" mu WHERE mu."sessionId" = "Session"."sessionId"), "inputTokens"),
+      "outputTokens"        = COALESCE((SELECT SUM("outputTokens")        FROM "MessageUsage" mu WHERE mu."sessionId" = "Session"."sessionId"), "outputTokens"),
+      "cacheCreationTokens" = COALESCE((SELECT SUM("cacheCreationTokens") FROM "MessageUsage" mu WHERE mu."sessionId" = "Session"."sessionId"), "cacheCreationTokens"),
+      "cacheReadTokens"     = COALESCE((SELECT SUM("cacheReadTokens")     FROM "MessageUsage" mu WHERE mu."sessionId" = "Session"."sessionId"), "cacheReadTokens"),
+      "costUSD"             = COALESCE((SELECT SUM("costUSD")             FROM "MessageUsage" mu WHERE mu."sessionId" = "Session"."sessionId"), "costUSD"),
+      "totalTokens"         = COALESCE((
+        SELECT SUM("inputTokens" + "outputTokens" + "cacheCreationTokens" + "cacheReadTokens")
+        FROM "MessageUsage" mu WHERE mu."sessionId" = "Session"."sessionId"
+      ), "totalTokens")
+  `
 
   // Log the sync
   await prisma.syncLog.create({

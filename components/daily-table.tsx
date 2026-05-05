@@ -19,8 +19,15 @@ interface DailyTableProps {
   sessions: SessionSummary[]
 }
 
+function shortModel(name: string): string {
+  // Strip the leading "claude-" so the table reads "opus-4-7" / "haiku-4-5"
+  return name.replace(/^claude-/, '')
+}
+
 export function DailyTable({ daily, sessions }: DailyTableProps) {
-  // Build models-per-day from sessions
+  // Fall back to session-derived models for days without modelBreakdowns
+  // (happens when the user filters by project on the client — see
+  // components/data-provider.tsx).
   const modelsByDate = new Map<string, Set<string>>()
   for (const s of sessions) {
     const date = s.startTime.slice(0, 10)
@@ -73,23 +80,25 @@ export function DailyTable({ daily, sessions }: DailyTableProps) {
           </TableHeader>
           <TableBody>
             {pagination.pageItems.map((d) => {
-              const models = modelsByDate.get(d.date)
-              const modelList = models ? Array.from(models).sort() : []
+              const modelList =
+                d.modelBreakdowns.length > 0
+                  ? d.modelBreakdowns.map((b) => b.model)
+                  : Array.from(modelsByDate.get(d.date) ?? []).sort()
               return (
                 <TableRow key={d.date}>
-                  <TableCell className="font-medium whitespace-nowrap">{d.date}</TableCell>
-                  <TableCell className="text-xs text-muted-foreground max-w-[180px]">
+                  <TableCell className="font-medium whitespace-nowrap align-top">{d.date}</TableCell>
+                  <TableCell className="text-xs text-muted-foreground max-w-[180px] align-top">
                     {modelList.map((m) => (
-                      <div key={m}>{m}</div>
+                      <div key={m}>- {shortModel(m)}</div>
                     ))}
                   </TableCell>
-                  <TableCell className="text-right">{d.sessions}</TableCell>
-                  <TableCell className="text-right font-mono text-xs">{formatNumber(d.inputTokens)}</TableCell>
-                  <TableCell className="text-right font-mono text-xs">{formatNumber(d.outputTokens)}</TableCell>
-                  <TableCell className="text-right font-mono text-xs">{formatNumber(d.cacheCreationTokens)}</TableCell>
-                  <TableCell className="text-right font-mono text-xs">{formatNumber(d.cacheReadTokens)}</TableCell>
-                  <TableCell className="text-right font-mono text-xs">{formatNumber(d.totalTokens)}</TableCell>
-                  <TableCell className="text-right font-medium">{formatCost(d.costUSD)}</TableCell>
+                  <TableCell className="text-right align-top">{d.sessions}</TableCell>
+                  <TableCell className="text-right font-mono text-xs align-top">{formatNumber(d.inputTokens)}</TableCell>
+                  <TableCell className="text-right font-mono text-xs align-top">{formatNumber(d.outputTokens)}</TableCell>
+                  <TableCell className="text-right font-mono text-xs align-top">{formatNumber(d.cacheCreationTokens)}</TableCell>
+                  <TableCell className="text-right font-mono text-xs align-top">{formatNumber(d.cacheReadTokens)}</TableCell>
+                  <TableCell className="text-right font-mono text-xs align-top">{formatNumber(d.totalTokens)}</TableCell>
+                  <TableCell className="text-right font-medium align-top">{formatCost(d.costUSD)}</TableCell>
                 </TableRow>
               )
             })}

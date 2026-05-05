@@ -4,15 +4,28 @@ import type {
   SessionSummary,
   ProjectSummary,
   DailyUsage,
+  ModelBreakdown,
   OverviewStats,
 } from './parse-logs'
 
 export async function getUsageData(): Promise<UsageData> {
-  const dbSessions = await prisma.session.findMany({
-    orderBy: { startTime: 'desc' },
-  })
+  const [dbSessions, dbMessageUsages] = await Promise.all([
+    prisma.session.findMany({ orderBy: { startTime: 'desc' } }),
+    prisma.messageUsage.findMany({
+      select: {
+        date: true,
+        model: true,
+        speed: true,
+        inputTokens: true,
+        outputTokens: true,
+        cacheCreationTokens: true,
+        cacheReadTokens: true,
+        costUSD: true,
+      },
+    }),
+  ])
 
-  if (dbSessions.length === 0) {
+  if (dbSessions.length === 0 && dbMessageUsages.length === 0) {
     return emptyUsageData()
   }
 
@@ -47,13 +60,12 @@ export async function getUsageData(): Promise<UsageData> {
     modelCounts: JSON.parse(s.modelCountsJson || '{}') as Record<string, number>,
   }))
 
-  // Aggregate projects
+  // Aggregate projects (per-session — unaffected by message-level dedup since
+  // a session belongs to one project)
   const projectMap = new Map<string, ProjectSummary>()
-  const dailyMap = new Map<string, DailyUsage>()
   const toolUsage: Record<string, number> = {}
 
   for (const s of sessions) {
-    // Projects
     if (!projectMap.has(s.project)) {
       projectMap.set(s.project, {
         name: s.project,
@@ -75,11 +87,77 @@ export async function getUsageData(): Promise<UsageData> {
     for (const [tool, count] of Object.entries(s.toolCalls)) {
       proj.toolCalls[tool] = (proj.toolCalls[tool] || 0) + count
     }
+    for (const [tool, count] of Object.entries(s.toolCalls)) {
+      toolUsage[tool] = (toolUsage[tool] || 0) + count
+    }
+  }
 
-    // Daily
+  // Daily aggregation comes from MessageUsage so totals match ccusage:
+  //   • per-message timestamp → correct date bucket across midnight
+  //   • (messageId, requestId) dedup → no double-counting on session resumes
+  //   • per-(date, model) breakdown → opus + haiku stack on the same day
+  // Mirrors ccusage data-loader.ts:760-901 (loadDailyUsageData).
+  const dailyMap = new Map<string, DailyUsage>()
+  const breakdownMap = new Map<string, Map<string, ModelBreakdown>>()
+
+  for (const m of dbMessageUsages) {
+    if (!dailyMap.has(m.date)) {
+      dailyMap.set(m.date, {
+        date: m.date,
+        sessions: 0,
+        messages: 0,
+        userMessages: 0,
+        assistantMessages: 0,
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheCreationTokens: 0,
+        cacheReadTokens: 0,
+        totalTokens: 0,
+        costUSD: 0,
+        toolCalls: 0,
+        toolCallsDetail: {},
+        interruptions: 0,
+        rateLimitErrors: 0,
+        modelBreakdowns: [],
+      })
+      breakdownMap.set(m.date, new Map())
+    }
+    const d = dailyMap.get(m.date)!
+    d.inputTokens += m.inputTokens
+    d.outputTokens += m.outputTokens
+    d.cacheCreationTokens += m.cacheCreationTokens
+    d.cacheReadTokens += m.cacheReadTokens
+    d.totalTokens +=
+      m.inputTokens + m.outputTokens + m.cacheCreationTokens + m.cacheReadTokens
+    d.costUSD += m.costUSD
+
+    const modelKey = m.speed === 'fast' ? `${m.model}-fast` : m.model
+    const perModel = breakdownMap.get(m.date)!
+    if (!perModel.has(modelKey)) {
+      perModel.set(modelKey, {
+        model: modelKey,
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheCreationTokens: 0,
+        cacheReadTokens: 0,
+        costUSD: 0,
+      })
+    }
+    const mb = perModel.get(modelKey)!
+    mb.inputTokens += m.inputTokens
+    mb.outputTokens += m.outputTokens
+    mb.cacheCreationTokens += m.cacheCreationTokens
+    mb.cacheReadTokens += m.cacheReadTokens
+    mb.costUSD += m.costUSD
+  }
+
+  // Layer per-session counters that MessageUsage doesn't track: sessions count,
+  // user/assistant message counts, tool calls, interruptions.
+  for (const s of sessions) {
     const date = s.startTime.slice(0, 10)
-    if (!dailyMap.has(date)) {
-      dailyMap.set(date, {
+    let d = dailyMap.get(date)
+    if (!d) {
+      d = {
         date,
         sessions: 0,
         messages: 0,
@@ -95,30 +173,27 @@ export async function getUsageData(): Promise<UsageData> {
         toolCallsDetail: {},
         interruptions: 0,
         rateLimitErrors: 0,
-      })
+        modelBreakdowns: [],
+      }
+      dailyMap.set(date, d)
+      breakdownMap.set(date, new Map())
     }
-    const daily = dailyMap.get(date)!
-    daily.sessions++
-    daily.messages += s.totalMessages
-    daily.userMessages += s.userMessages
-    daily.assistantMessages += s.assistantMessages
-    daily.inputTokens += s.inputTokens
-    daily.outputTokens += s.outputTokens
-    daily.cacheCreationTokens += s.cacheCreationTokens
-    daily.cacheReadTokens += s.cacheReadTokens
-    daily.totalTokens += s.totalTokens
-    daily.costUSD += s.costUSD
-    daily.toolCalls += s.toolCallsTotal
-    daily.interruptions += s.userInterruptions
-    daily.rateLimitErrors += s.rateLimitErrors
+    d.sessions++
+    d.messages += s.totalMessages
+    d.userMessages += s.userMessages
+    d.assistantMessages += s.assistantMessages
+    d.toolCalls += s.toolCallsTotal
+    d.interruptions += s.userInterruptions
+    d.rateLimitErrors += s.rateLimitErrors
     for (const [tool, count] of Object.entries(s.toolCalls)) {
-      daily.toolCallsDetail[tool] = (daily.toolCallsDetail[tool] || 0) + count
+      d.toolCallsDetail[tool] = (d.toolCallsDetail[tool] || 0) + count
     }
+  }
 
-    // Tool usage
-    for (const [tool, count] of Object.entries(s.toolCalls)) {
-      toolUsage[tool] = (toolUsage[tool] || 0) + count
-    }
+  for (const [date, perModel] of breakdownMap) {
+    dailyMap.get(date)!.modelBreakdowns = Array.from(perModel.values()).sort((a, b) =>
+      a.model.localeCompare(b.model)
+    )
   }
 
   const dailyArr = Array.from(dailyMap.values()).sort((a, b) => a.date.localeCompare(b.date))
@@ -139,18 +214,31 @@ export async function getUsageData(): Promise<UsageData> {
     }
   }
 
+  // Overview token + cost totals come from the deduped MessageUsage rows so
+  // the overview matches the daily breakdown (which also reads MessageUsage).
+  const tokenTotals = dailyArr.reduce(
+    (acc, d) => ({
+      input: acc.input + d.inputTokens,
+      output: acc.output + d.outputTokens,
+      cc: acc.cc + d.cacheCreationTokens,
+      cr: acc.cr + d.cacheReadTokens,
+      cost: acc.cost + d.costUSD,
+    }),
+    { input: 0, output: 0, cc: 0, cr: 0, cost: 0 }
+  )
+
   const overview: OverviewStats = {
     totalSessions: sessions.length,
     totalProjects: projects.length,
     totalMessages: sessions.reduce((a, s) => a + s.totalMessages, 0),
     totalUserMessages: sessions.reduce((a, s) => a + s.userMessages, 0),
     totalAssistantMessages: sessions.reduce((a, s) => a + s.assistantMessages, 0),
-    totalInputTokens: sessions.reduce((a, s) => a + s.inputTokens, 0),
-    totalOutputTokens: sessions.reduce((a, s) => a + s.outputTokens, 0),
-    totalCacheCreationTokens: sessions.reduce((a, s) => a + s.cacheCreationTokens, 0),
-    totalCacheReadTokens: sessions.reduce((a, s) => a + s.cacheReadTokens, 0),
-    totalTokens: sessions.reduce((a, s) => a + s.totalTokens, 0),
-    totalCostUSD: sessions.reduce((a, s) => a + s.costUSD, 0),
+    totalInputTokens: tokenTotals.input,
+    totalOutputTokens: tokenTotals.output,
+    totalCacheCreationTokens: tokenTotals.cc,
+    totalCacheReadTokens: tokenTotals.cr,
+    totalTokens: tokenTotals.input + tokenTotals.output + tokenTotals.cc + tokenTotals.cr,
+    totalCostUSD: tokenTotals.cost,
     totalDurationMinutes: sessions.reduce((a, s) => a + s.durationMinutes, 0),
     totalToolCalls: sessions.reduce((a, s) => a + s.toolCallsTotal, 0),
     totalApiErrors: sessions.reduce((a, s) => a + s.apiErrors, 0),

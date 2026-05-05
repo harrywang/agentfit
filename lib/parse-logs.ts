@@ -49,6 +49,15 @@ export interface ProjectSummary {
   toolCalls: Record<string, number>
 }
 
+export interface ModelBreakdown {
+  model: string
+  inputTokens: number
+  outputTokens: number
+  cacheCreationTokens: number
+  cacheReadTokens: number
+  costUSD: number
+}
+
 export interface DailyUsage {
   date: string
   sessions: number
@@ -65,6 +74,7 @@ export interface DailyUsage {
   toolCallsDetail: Record<string, number>
   interruptions: number
   rateLimitErrors: number
+  modelBreakdowns: ModelBreakdown[]
 }
 
 export interface OverviewStats {
@@ -359,6 +369,7 @@ export async function parseAllLogs(): Promise<UsageData> {
             toolCallsDetail: {},
             interruptions: 0,
             rateLimitErrors: 0,
+            modelBreakdowns: [],
           })
         }
         const daily = dailyMap.get(date)!

@@ -42,6 +42,28 @@ model Session {
   @@index([startTime])
 }
 
+model MessageUsage {
+  id                  String   @id @default(cuid())
+  sessionId           String
+  messageId           String
+  requestId           String
+  model               String
+  speed               String   @default("standard") // "standard" | "fast"
+  timestamp           DateTime
+  date                String   // YYYY-MM-DD bucket of timestamp (local date)
+  inputTokens         Int
+  outputTokens        Int
+  cacheCreationTokens Int
+  cacheReadTokens     Int
+  costUSD             Float
+  createdAt           DateTime @default(now())
+
+  @@unique([messageId, requestId])
+  @@index([date])
+  @@index([sessionId])
+  @@index([model])
+}
+
 model Image {
   id        String   @id @default(cuid())
   sessionId String

@@ -43,12 +43,14 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: npm run electron:build:mac
 
-      - name: Upload DMGs
+      - name: Upload DMGs + updater metadata
         uses: actions/upload-artifact@v7
         with:
           name: mac-dmgs
           path: |
             dist-electron/*.dmg
+            dist-electron/*.dmg.blockmap
+            dist-electron/latest-mac*.yml
 
   build-win:
     runs-on: windows-latest
@@ -66,12 +68,14 @@ jobs:
       - name: Build Windows installer
         run: npm run electron:build:win
 
-      - name: Upload exe
+      - name: Upload exe + updater metadata
         uses: actions/upload-artifact@v7
         with:
           name: win-exe
           path: |
             dist-electron/*.exe
+            dist-electron/*.exe.blockmap
+            dist-electron/latest*.yml
 
   publish-npm:
     runs-on: ubuntu-latest

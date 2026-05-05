@@ -1,6 +1,6 @@
 {
   "name": "agentfit",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "description": "Fitness tracker dashboard for AI coding agents (Claude Code, Codex). Visualize usage, cost, tokens, and productivity from local conversation logs.",
   "type": "module",
   "bin": {
@@ -51,6 +51,7 @@
     "clsx": "^2.1.1",
     "dagre": "^0.8.5",
     "date-fns": "^4.1.0",
+    "electron-updater": "^6.8.3",
     "embla-carousel-react": "^8.6.0",
     "lucide-react": "^1.7.0",
     "next": "16.1.7",

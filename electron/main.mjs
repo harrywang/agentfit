@@ -4,6 +4,8 @@ import { existsSync, readFileSync } from 'fs'
 import { createRequire } from 'module'
 import path from 'path'
 import http from 'http'
+import electronUpdaterPkg from 'electron-updater'
+const { autoUpdater } = electronUpdaterPkg
 
 const isPacked = app.isPackaged
 
@@ -147,11 +149,15 @@ function createWindow() {
     minWidth: 900,
     minHeight: 600,
     title: 'AgentFit',
+    show: false, // wait until maximized so the user doesn't see the resize jump
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
     },
   })
+
+  mainWindow.maximize()
+  mainWindow.show()
 
   mainWindow.loadURL(`http://127.0.0.1:${activePort}`)
 
@@ -163,6 +169,38 @@ function createWindow() {
   mainWindow.on('closed', () => {
     mainWindow = null
   })
+}
+
+function setupAutoUpdate() {
+  if (!app.isPackaged) return // skip in dev — there's no signed build to update
+
+  autoUpdater.autoDownload = true
+  autoUpdater.autoInstallOnAppQuit = true
+  autoUpdater.logger = { info: log, warn: log, error: log, debug: () => {} }
+
+  autoUpdater.on('error', (err) => log(`Updater error: ${err?.message || err}`))
+  autoUpdater.on('update-available', (info) => log(`Update available: ${info?.version}`))
+  autoUpdater.on('update-not-available', () => log('No update available'))
+  autoUpdater.on('update-downloaded', async (info) => {
+    log(`Update downloaded: ${info?.version}`)
+    const { response } = await dialog.showMessageBox(mainWindow ?? undefined, {
+      type: 'info',
+      buttons: ['Restart now', 'Later'],
+      defaultId: 0,
+      cancelId: 1,
+      title: 'Update ready',
+      message: `AgentFit ${info?.version} is ready to install.`,
+      detail: 'Restart the app to finish updating.',
+    })
+    if (response === 0) {
+      autoUpdater.quitAndInstall()
+    }
+  })
+
+  // Don't block startup; check shortly after the window is ready.
+  setTimeout(() => {
+    autoUpdater.checkForUpdates().catch((err) => log(`Update check failed: ${err?.message || err}`))
+  }, 5_000)
 }
 
 function showSplash() {
@@ -197,6 +235,7 @@ app.whenReady().then(async () => {
     await startServer()
     splash.close()
     createWindow()
+    setupAutoUpdate()
   } catch (err) {
     splash.close()
     log(`Startup error: ${err.message}`)

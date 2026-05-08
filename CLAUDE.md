@@ -78,6 +78,9 @@ Non-obvious invariants that make this work — don't break them:
 - **Recurse into `subagents/`.** Sub-agent JSONLs (`<sessionDir>/subagents/agent-*.jsonl`) carry haiku/opus token usage that's missing from the top-level file. Ours and ccusage's totals only agree when these are included.
 - **Local-timezone date bucket.** Use `Intl.DateTimeFormat('en-CA')` with no `timeZone` option (matches ccusage `apps/ccusage/src/_date-utils.ts:43-48`). Switching to `toISOString().slice(0,10)` (UTC) shifts cross-midnight tokens to the wrong day and breaks parity.
 - **Per-message tiered pricing + `speed=fast` multiplier.** Any cost calculation must use `lib/pricing.ts:calculateCost(model, usage, pricing, speed)` — the 200k tier and 6× Opus-fast multiplier matter.
+- **Client-side filters must trim, not rebuild.** When `timeRange ≠ 'all'`, `components/data-provider.tsx:filterData` slices `raw.daily` by date (preserving `modelBreakdowns`) when `project='all'`. Rebuilding daily from session-level rollups instead loses the per-(date, model) split (haiku rows disappear from the UI), buckets cross-midnight tokens by `s.startTime` UTC date instead of local-tz, and drifts from `MessageUsage` totals. Only fall back to a session rebuild when a project filter is active, since per-message rows aren't tagged by project on the client.
+- **Don't double-cache the LiteLLM fetch.** `lib/pricing.ts:loadPricing` uses `fetch(url, { cache: 'no-store' })` and refuses to memoize an empty result. `next: { revalidate: 86400 }` once memoized a stale/empty body into the in-process `pricingCache` and zero-costed every newly-listed model (e.g. `claude-opus-4-7`) until the process restarted. The in-process cache alone is enough.
+- **`MessageUsage` writes must self-heal cost.** Use `ON CONFLICT("messageId", "requestId") DO UPDATE SET "costUSD" = MAX(old, excluded)`, not `INSERT OR IGNORE`. Rows written during a pricing-broken window stay at `costUSD=0` forever otherwise — the next resync silently skips them. `MAX` also prevents overwriting good values when pricing is temporarily unavailable.
 
 ### Key Conventions
 
@@ -91,6 +94,13 @@ Non-obvious invariants that make this work — don't break them:
 ### Desktop Distribution
 
 Electron app built via electron-builder. macOS DMGs are code-signed and notarized via GitHub Actions (`release.yml`, triggered by `v*` tags). Notarization requires three GitHub secrets: `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID` (in addition to `CERTIFICATE_P12` and `CERTIFICATE_PASSWORD` for signing).
+
+**`electron-builder.yml` file globs are unscoped — `!node_modules` matches at any depth.** When tightening the bundle, every `node_modules` you actually need has to be re-included by name. Specifically:
+- Transitive runtime deps of `electron-updater` (e.g. `sax` via `builder-util-runtime`) — without these the main process crashes at launch with `Cannot find module 'sax'`.
+- `electron/server/node_modules/**/*` — the standalone Next server's own deps, including `@libsql/client`. Otherwise the local server fails to boot.
+- `electron/server/.next/node_modules/**/*` — Turbopack chunks reference Prisma's hash-suffixed package by name (e.g. `@prisma/client-2c3a283f134fdcb6`). Without it API routes throw `Cannot find module` at request time.
+
+Verify locally with an unsigned build (`CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac -c.mac.notarize=false -c.mac.identity=null`) and inspect `app.asar.unpacked/electron/server/.next/node_modules` before tagging a release.
 
 ### Coaching Philosophy
 

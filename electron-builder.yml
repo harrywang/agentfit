@@ -9,10 +9,18 @@ files:
   - "electron/**/*"
   - "package.json"
   - "!node_modules"
+  # Standalone Next server ships its own node_modules under electron/server/.
+  # The `!node_modules` glob above is unscoped and matches at any depth, so
+  # without these re-includes the server's @libsql/client and Prisma's
+  # hash-suffixed @prisma/client-* (referenced by name from the turbopack
+  # chunks under .next/) get stripped and the server fails to boot.
+  - "electron/server/node_modules/**/*"
+  - "electron/server/.next/node_modules/**/*"
   # electron-updater + its transitive runtime deps. Loaded by main.mjs to
   # check GitHub releases for new versions on startup.
   - "node_modules/electron-updater/**/*"
   - "node_modules/builder-util-runtime/**/*"
+  - "node_modules/sax/**/*"
   - "node_modules/fs-extra/**/*"
   - "node_modules/graceful-fs/**/*"
   - "node_modules/jsonfile/**/*"

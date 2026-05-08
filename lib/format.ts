@@ -24,3 +24,15 @@ export function formatDuration(minutes: number): string {
 export function formatNumber(n: number): string {
   return n.toLocaleString()
 }
+
+// Local-timezone YYYY-MM-DD bucket. Matches ccusage's _date-utils.ts so daily
+// totals agree to the cent — UTC slicing shifts cross-midnight tokens.
+const LOCAL_DATE_FORMATTER = new Intl.DateTimeFormat('en-CA', {
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+})
+
+export function formatLocalDate(d: Date): string {
+  return LOCAL_DATE_FORMATTER.format(d)
+}

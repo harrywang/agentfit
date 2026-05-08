@@ -3,6 +3,7 @@
 import { createContext, useContext, useEffect, useState, useCallback, useMemo, type ReactNode } from 'react'
 import { toast } from 'sonner'
 import type { UsageData, SessionSummary, DailyUsage, ProjectSummary, OverviewStats } from '@/lib/parse-logs'
+import { formatLocalDate } from '@/lib/format'
 
 export type AgentType = 'claude' | 'codex' | 'combined'
 export type TimeRange = '7d' | '30d' | '90d' | 'all'
@@ -50,17 +51,6 @@ const RANGE_DAYS: Record<TimeRange, number> = {
   'all': Infinity,
 }
 
-// Local-timezone YYYY-MM-DD, matching ccusage's _date-utils.ts and
-// lib/sync.ts (Intl.DateTimeFormat('en-CA')). UTC ISO slicing would shift
-// cross-midnight events to the wrong day and break parity with ccusage.
-function localDateString(d: Date): string {
-  return new Intl.DateTimeFormat('en-CA', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).format(d)
-}
-
 function filterData(raw: UsageData | null, range: TimeRange, project: string): UsageData | null {
   if (!raw) return raw
   if (range === 'all' && project === 'all') return raw
@@ -69,7 +59,7 @@ function filterData(raw: UsageData | null, range: TimeRange, project: string): U
   const cutoff = new Date()
   cutoff.setDate(cutoff.getDate() - days)
   const cutoffISO = range === 'all' ? '' : cutoff.toISOString()
-  const cutoffDate = range === 'all' ? '' : localDateString(cutoff)
+  const cutoffDate = range === 'all' ? '' : formatLocalDate(cutoff)
 
   // Filter sessions by time range and project
   const sessions = raw.sessions.filter(s => {
@@ -87,13 +77,11 @@ function filterData(raw: UsageData | null, range: TimeRange, project: string): U
   // per-message rows aren't tagged by project on the client.
   let daily: DailyUsage[]
   if (project === 'all') {
-    daily = raw.daily
-      .filter(d => range === 'all' || d.date >= cutoffDate)
-      .map(d => ({ ...d, modelBreakdowns: [...d.modelBreakdowns] }))
+    daily = raw.daily.filter(d => range === 'all' || d.date >= cutoffDate)
   } else {
     const dailyMap = new Map<string, DailyUsage>()
     for (const s of sessions) {
-      const date = localDateString(new Date(s.startTime))
+      const date = formatLocalDate(new Date(s.startTime))
       if (!dailyMap.has(date)) {
         dailyMap.set(date, {
           date, sessions: 0, messages: 0,
@@ -126,9 +114,6 @@ function filterData(raw: UsageData | null, range: TimeRange, project: string): U
     daily = Array.from(dailyMap.values()).sort((a, b) => a.date.localeCompare(b.date))
   }
 
-  // Projects, tools, models, skills, permission modes — all derived from
-  // the (already-filtered) sessions list and unchanged across the two daily
-  // paths.
   const projectMap = new Map<string, ProjectSummary>()
   const toolUsage: Record<string, number> = {}
   const models: Record<string, number> = {}
@@ -195,7 +180,7 @@ function filterData(raw: UsageData | null, range: TimeRange, project: string): U
     totalRateLimitDays: (() => {
       const rateDays = new Set<string>()
       for (const s of sessions) {
-        if (s.rateLimitErrors > 0) rateDays.add(localDateString(new Date(s.startTime)))
+        if (s.rateLimitErrors > 0) rateDays.add(formatLocalDate(new Date(s.startTime)))
       }
       return rateDays.size
     })(),

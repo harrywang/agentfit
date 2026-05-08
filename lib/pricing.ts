@@ -28,11 +28,9 @@ export async function loadPricing(): Promise<Record<string, ModelPricing>> {
   if (pricingCache) return pricingCache
 
   try {
-    // Bypass Next.js's data cache — we already cache the parsed result in
-    // `pricingCache` for the lifetime of this process. Letting Next cache
-    // the raw response in addition once caused stale/empty bodies to be
-    // memoized as the pricing map, leading to silently zero costs for
-    // newly-listed models (claude-opus-4-7) until the dev server restarted.
+    // Bypass Next's data cache; we memoize the parsed result in
+    // `pricingCache` ourselves. Double-caching once let an empty body
+    // freeze every newly-listed model at cost=0 until process restart.
     const res = await fetch(LITELLM_PRICING_URL, { cache: 'no-store' })
     const data = await res.json()
     const filtered: Record<string, ModelPricing> = {}
@@ -60,13 +58,11 @@ export async function loadPricing(): Promise<Record<string, ModelPricing>> {
             : undefined,
       }
     }
-    // Only memoize if we actually got Anthropic entries — an empty result
-    // here is almost certainly a transient fetch hiccup rather than the
-    // truth, and caching it would zero-cost every row until process restart.
-    if (Object.keys(filtered).length > 0) {
-      pricingCache = filtered
-    }
-    return Object.keys(filtered).length > 0 ? filtered : getFallbackPricing()
+    // Refuse to memoize an empty map — that would be a transient fetch
+    // hiccup turning into a process-lifetime zero-cost lock.
+    if (Object.keys(filtered).length === 0) return getFallbackPricing()
+    pricingCache = filtered
+    return filtered
   } catch {
     return getFallbackPricing()
   }

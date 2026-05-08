@@ -3,18 +3,10 @@ import path from 'path'
 import os from 'os'
 import { prisma } from './db'
 import { loadPricing, calculateCost, type ModelPricing, type Speed } from './pricing'
+import { formatLocalDate } from './format'
 
 const PROJECTS_DIR = path.join(os.homedir(), '.claude', 'projects')
 const IMAGES_DIR = path.resolve(process.cwd(), 'data', 'images')
-
-// Bucket per-message timestamps using the user's *local* timezone so daily
-// totals match ccusage (apps/ccusage/src/_date-utils.ts:43-48). en-CA yields
-// YYYY-MM-DD without zero-padding surprises.
-const DATE_FORMATTER = new Intl.DateTimeFormat('en-CA', {
-  year: 'numeric',
-  month: '2-digit',
-  day: '2-digit',
-})
 
 interface LogEntry {
   type?: string
@@ -242,7 +234,7 @@ function parseSessionFile(
             model: currentModel,
             speed,
             timestamp: ts,
-            date: DATE_FORMATTER.format(ts),
+            date: formatLocalDate(ts),
             inputTokens: inT,
             outputTokens: outT,
             cacheCreationTokens: ccT,

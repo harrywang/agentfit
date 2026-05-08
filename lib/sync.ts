@@ -417,7 +417,7 @@ export async function syncLogs(): Promise<SyncResult> {
         if (isSubagent) {
           for (const m of parsed.messageUsages) {
             await prisma.$executeRaw`
-              INSERT OR IGNORE INTO "MessageUsage" (
+              INSERT INTO "MessageUsage" (
                 "id", "sessionId", "messageId", "requestId", "model", "speed",
                 "timestamp", "date",
                 "inputTokens", "outputTokens", "cacheCreationTokens", "cacheReadTokens",
@@ -429,6 +429,8 @@ export async function syncLogs(): Promise<SyncResult> {
                 ${m.inputTokens}, ${m.outputTokens}, ${m.cacheCreationTokens}, ${m.cacheReadTokens},
                 ${m.costUSD}, ${new Date().toISOString()}
               )
+              ON CONFLICT("messageId", "requestId") DO UPDATE SET
+                "costUSD" = MAX("MessageUsage"."costUSD", excluded."costUSD")
             `
           }
           result.sessionsAdded++

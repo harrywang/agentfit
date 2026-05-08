@@ -50,6 +50,17 @@ const RANGE_DAYS: Record<TimeRange, number> = {
   'all': Infinity,
 }
 
+// Local-timezone YYYY-MM-DD, matching ccusage's _date-utils.ts and
+// lib/sync.ts (Intl.DateTimeFormat('en-CA')). UTC ISO slicing would shift
+// cross-midnight events to the wrong day and break parity with ccusage.
+function localDateString(d: Date): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(d)
+}
+
 function filterData(raw: UsageData | null, range: TimeRange, project: string): UsageData | null {
   if (!raw) return raw
   if (range === 'all' && project === 'all') return raw
@@ -58,6 +69,7 @@ function filterData(raw: UsageData | null, range: TimeRange, project: string): U
   const cutoff = new Date()
   cutoff.setDate(cutoff.getDate() - days)
   const cutoffISO = range === 'all' ? '' : cutoff.toISOString()
+  const cutoffDate = range === 'all' ? '' : localDateString(cutoff)
 
   // Filter sessions by time range and project
   const sessions = raw.sessions.filter(s => {
@@ -66,14 +78,62 @@ function filterData(raw: UsageData | null, range: TimeRange, project: string): U
     return true
   })
 
-  // Re-aggregate from filtered sessions
+  // Daily: preserve the server's per-message-derived rows (with
+  // modelBreakdowns intact, including haiku/sub-agent tokens) when the
+  // project filter is inactive — only trim by date. Re-aggregating from
+  // session rollups loses the per-(date, model) split, mis-buckets
+  // cross-midnight tokens, and can drift from ccusage. When a project
+  // filter IS active we have no choice but to rebuild from sessions, since
+  // per-message rows aren't tagged by project on the client.
+  let daily: DailyUsage[]
+  if (project === 'all') {
+    daily = raw.daily
+      .filter(d => range === 'all' || d.date >= cutoffDate)
+      .map(d => ({ ...d, modelBreakdowns: [...d.modelBreakdowns] }))
+  } else {
+    const dailyMap = new Map<string, DailyUsage>()
+    for (const s of sessions) {
+      const date = localDateString(new Date(s.startTime))
+      if (!dailyMap.has(date)) {
+        dailyMap.set(date, {
+          date, sessions: 0, messages: 0,
+          userMessages: 0, assistantMessages: 0,
+          inputTokens: 0, outputTokens: 0,
+          cacheCreationTokens: 0, cacheReadTokens: 0,
+          totalTokens: 0, costUSD: 0, toolCalls: 0,
+          toolCallsDetail: {}, interruptions: 0, rateLimitErrors: 0,
+          modelBreakdowns: [],
+        })
+      }
+      const day = dailyMap.get(date)!
+      day.sessions++
+      day.messages += s.totalMessages
+      day.userMessages += s.userMessages
+      day.assistantMessages += s.assistantMessages
+      day.inputTokens += s.inputTokens
+      day.outputTokens += s.outputTokens
+      day.cacheCreationTokens += s.cacheCreationTokens
+      day.cacheReadTokens += s.cacheReadTokens
+      day.totalTokens += s.totalTokens
+      day.costUSD += s.costUSD
+      day.toolCalls += s.toolCallsTotal
+      day.interruptions += s.userInterruptions
+      day.rateLimitErrors += s.rateLimitErrors
+      for (const [tool, count] of Object.entries(s.toolCalls)) {
+        day.toolCallsDetail[tool] = (day.toolCallsDetail[tool] || 0) + count
+      }
+    }
+    daily = Array.from(dailyMap.values()).sort((a, b) => a.date.localeCompare(b.date))
+  }
+
+  // Projects, tools, models, skills, permission modes — all derived from
+  // the (already-filtered) sessions list and unchanged across the two daily
+  // paths.
   const projectMap = new Map<string, ProjectSummary>()
-  const dailyMap = new Map<string, DailyUsage>()
   const toolUsage: Record<string, number> = {}
   const models: Record<string, number> = {}
 
   for (const s of sessions) {
-    // Projects
     if (!projectMap.has(s.project)) {
       projectMap.set(s.project, {
         name: s.project,
@@ -94,55 +154,27 @@ function filterData(raw: UsageData | null, range: TimeRange, project: string): U
     proj.totalDurationMinutes += s.durationMinutes
     for (const [tool, count] of Object.entries(s.toolCalls)) {
       proj.toolCalls[tool] = (proj.toolCalls[tool] || 0) + count
-    }
-
-    // Daily
-    const date = s.startTime.slice(0, 10)
-    if (!dailyMap.has(date)) {
-      dailyMap.set(date, {
-        date, sessions: 0, messages: 0,
-        userMessages: 0, assistantMessages: 0,
-        inputTokens: 0, outputTokens: 0,
-        cacheCreationTokens: 0, cacheReadTokens: 0,
-        totalTokens: 0, costUSD: 0, toolCalls: 0,
-        toolCallsDetail: {}, interruptions: 0, rateLimitErrors: 0,
-        // Client-side rebuild: per-(date, model) breakdown is not derivable
-        // from session-level rows. The unfiltered case (project=all,
-        // range=all) returns raw and preserves the server's breakdowns.
-        modelBreakdowns: [],
-      })
-    }
-    const day = dailyMap.get(date)!
-    day.sessions++
-    day.messages += s.totalMessages
-    day.userMessages += s.userMessages
-    day.assistantMessages += s.assistantMessages
-    day.inputTokens += s.inputTokens
-    day.outputTokens += s.outputTokens
-    day.cacheCreationTokens += s.cacheCreationTokens
-    day.cacheReadTokens += s.cacheReadTokens
-    day.totalTokens += s.totalTokens
-    day.costUSD += s.costUSD
-    day.toolCalls += s.toolCallsTotal
-    day.interruptions += s.userInterruptions
-    day.rateLimitErrors += s.rateLimitErrors
-    for (const [tool, count] of Object.entries(s.toolCalls)) {
-      day.toolCallsDetail[tool] = (day.toolCallsDetail[tool] || 0) + count
-    }
-
-    // Tools
-    for (const [tool, count] of Object.entries(s.toolCalls)) {
       toolUsage[tool] = (toolUsage[tool] || 0) + count
     }
-
-    // Models — aggregate at message level
     for (const [m, count] of Object.entries(s.modelCounts || {})) {
       models[m] = (models[m] || 0) + count
     }
   }
 
   const projects = Array.from(projectMap.values()).sort((a, b) => b.totalCost - a.totalCost)
-  const daily = Array.from(dailyMap.values()).sort((a, b) => a.date.localeCompare(b.date))
+
+  // Overview token/cost totals come from the daily rows so the overview
+  // and the daily breakdown agree (mirrors getUsageData on the server).
+  const tokenTotals = daily.reduce(
+    (acc, d) => ({
+      input: acc.input + d.inputTokens,
+      output: acc.output + d.outputTokens,
+      cc: acc.cc + d.cacheCreationTokens,
+      cr: acc.cr + d.cacheReadTokens,
+      cost: acc.cost + d.costUSD,
+    }),
+    { input: 0, output: 0, cc: 0, cr: 0, cost: 0 }
+  )
 
   const overview: OverviewStats = {
     totalSessions: sessions.length,
@@ -150,22 +182,22 @@ function filterData(raw: UsageData | null, range: TimeRange, project: string): U
     totalMessages: sessions.reduce((a, s) => a + s.totalMessages, 0),
     totalUserMessages: sessions.reduce((a, s) => a + s.userMessages, 0),
     totalAssistantMessages: sessions.reduce((a, s) => a + s.assistantMessages, 0),
-    totalInputTokens: sessions.reduce((a, s) => a + s.inputTokens, 0),
-    totalOutputTokens: sessions.reduce((a, s) => a + s.outputTokens, 0),
-    totalCacheCreationTokens: sessions.reduce((a, s) => a + s.cacheCreationTokens, 0),
-    totalCacheReadTokens: sessions.reduce((a, s) => a + s.cacheReadTokens, 0),
-    totalTokens: sessions.reduce((a, s) => a + s.totalTokens, 0),
-    totalCostUSD: sessions.reduce((a, s) => a + s.costUSD, 0),
+    totalInputTokens: tokenTotals.input,
+    totalOutputTokens: tokenTotals.output,
+    totalCacheCreationTokens: tokenTotals.cc,
+    totalCacheReadTokens: tokenTotals.cr,
+    totalTokens: tokenTotals.input + tokenTotals.output + tokenTotals.cc + tokenTotals.cr,
+    totalCostUSD: tokenTotals.cost,
     totalSystemPromptEdits: sessions.reduce((a, s) => a + (s.systemPromptEdits ?? 0), 0),
     totalDurationMinutes: sessions.reduce((a, s) => a + s.durationMinutes, 0),
     totalToolCalls: sessions.reduce((a, s) => a + s.toolCallsTotal, 0),
     totalApiErrors: sessions.reduce((a, s) => a + s.apiErrors, 0),
     totalRateLimitDays: (() => {
-      const days = new Set<string>()
+      const rateDays = new Set<string>()
       for (const s of sessions) {
-        if (s.rateLimitErrors > 0) days.add(s.startTime.slice(0, 10))
+        if (s.rateLimitErrors > 0) rateDays.add(localDateString(new Date(s.startTime)))
       }
-      return days.size
+      return rateDays.size
     })(),
     totalUserInterruptions: sessions.reduce((a, s) => a + s.userInterruptions, 0),
     models,

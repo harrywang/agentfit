@@ -85,6 +85,14 @@ mac:
       arch:
         - x64
         - arm64
+    # electron-updater on macOS applies updates from the .zip, not the .dmg.
+    # Without this target, latest-mac.yml lists only DMGs and the updater
+    # throws "ZIP file not provided" at the download step. The DMG remains
+    # the artifact for first-time manual installs.
+    - target: zip
+      arch:
+        - x64
+        - arm64
 
 win:
   icon: build/icon.png

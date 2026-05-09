@@ -43,13 +43,15 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: npm run electron:build:mac
 
-      - name: Upload DMGs + updater metadata
+      - name: Upload DMGs + ZIPs + updater metadata
         uses: actions/upload-artifact@v7
         with:
           name: mac-dmgs
           path: |
             dist-electron/*.dmg
             dist-electron/*.dmg.blockmap
+            dist-electron/*.zip
+            dist-electron/*.zip.blockmap
             dist-electron/latest-mac*.yml
 
   build-win:

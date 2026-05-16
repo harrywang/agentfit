@@ -1,23 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
-import path from 'path'
-import os from 'os'
-import fs from 'fs'
 import { prisma } from '@/lib/db'
 import { getOpenAIKey } from '@/lib/config'
 import { parseSessionDetail } from '@/lib/session-detail'
+import { parseCodexSessionDetail } from '@/lib/session-detail-codex'
+import { resolveSessionFile } from '@/lib/session-resolver'
 import { extractUserMessages, classifyMessages } from '@/lib/openai'
 
 export const dynamic = 'force-dynamic'
-
-function findSessionFile(sessionId: string): string | null {
-  const projectsDir = path.join(os.homedir(), '.claude', 'projects')
-  if (!fs.existsSync(projectsDir)) return null
-  for (const dir of fs.readdirSync(projectsDir)) {
-    const candidate = path.join(projectsDir, dir, `${sessionId}.jsonl`)
-    if (fs.existsSync(candidate)) return candidate
-  }
-  return null
-}
 
 // GET — retrieve analysis results
 export async function GET(request: NextRequest) {
@@ -83,12 +72,16 @@ export async function POST(request: NextRequest) {
     }
 
     // Find and parse the session
-    const filePath = findSessionFile(sessionId)
-    if (!filePath) {
+    const resolved = resolveSessionFile(sessionId)
+    if (!resolved) {
       return NextResponse.json({ error: 'Session JSONL not found' }, { status: 404 })
     }
 
-    const detail = parseSessionDetail(filePath, sessionId)
+    const detail =
+      resolved.source === 'codex'
+        ? parseCodexSessionDetail(resolved.filePath, sessionId)
+        : parseSessionDetail(resolved.filePath, sessionId)
+
     const messages = extractUserMessages(detail.chatLog)
 
     if (messages.length === 0) {

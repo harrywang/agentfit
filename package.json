@@ -31,6 +31,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
+    "check:parity": "node scripts/check-parity.mjs",
     "prisma:schema-sql": "npx prisma migrate diff --from-empty --to-schema prisma/schema.prisma --script | sed 's/CREATE TABLE/CREATE TABLE IF NOT EXISTS/g; s/CREATE UNIQUE INDEX/CREATE UNIQUE INDEX IF NOT EXISTS/g; s/CREATE INDEX/CREATE INDEX IF NOT EXISTS/g' > prisma/schema.sql",
     "electron:prepare": "node scripts/prepare-electron.mjs",
     "electron:dev": "npm run prisma:schema-sql && npm run build && npm run electron:prepare && electron .",

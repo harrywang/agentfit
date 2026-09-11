@@ -44,6 +44,8 @@ next-env.d.ts
 
 # data
 /data/images/
+/data/pricing.json
+/data/cc-versions.json
 /agentfit.db
 /agentfit.db-journal
 .env

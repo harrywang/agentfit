@@ -422,7 +422,12 @@ export async function syncLogs(): Promise<SyncResult> {
                 ${m.costUSD}, ${new Date().toISOString()}
               )
               ON CONFLICT("messageId", "requestId") DO UPDATE SET
-                "costUSD" = MAX("MessageUsage"."costUSD", excluded."costUSD")
+                "costUSD" = CASE WHEN excluded."costUSD" > 0
+                  AND excluded."inputTokens" = "MessageUsage"."inputTokens"
+                  AND excluded."outputTokens" = "MessageUsage"."outputTokens"
+                  AND excluded."cacheCreationTokens" = "MessageUsage"."cacheCreationTokens"
+                  AND excluded."cacheReadTokens" = "MessageUsage"."cacheReadTokens"
+                  THEN excluded."costUSD" ELSE "MessageUsage"."costUSD" END
             `
           }
           result.sessionsAdded++
@@ -466,11 +471,17 @@ export async function syncLogs(): Promise<SyncResult> {
 
         // Per-message usage rows. Unique index on (messageId, requestId) makes
         // this idempotent across re-syncs and dedupes forks/resumes that copy
-        // prior turns into new JSONLs. Use SQLite's INSERT OR IGNORE because
-        // Prisma createMany on libsql doesn't expose skipDuplicates.
+        // prior turns into new JSONLs — first occurrence wins, matching
+        // ccusage's createUniqueHash dedup (streaming can log the same message
+        // several times with growing output_tokens; ccusage counts the first).
+        // On conflict, take the freshly calculated cost ONLY when the incoming
+        // tokens match the stored row (same snapshot, re-priced) — this lets
+        // rows written under a stale/wrong LiteLLM snapshot heal in both
+        // directions on resync, while later streaming snapshots and
+        // pricing-unavailable (cost=0) recalcs leave the row untouched.
         for (const m of parsed.messageUsages) {
           await prisma.$executeRaw`
-            INSERT OR IGNORE INTO "MessageUsage" (
+            INSERT INTO "MessageUsage" (
               "id", "sessionId", "messageId", "requestId", "model", "speed",
               "timestamp", "date",
               "inputTokens", "outputTokens", "cacheCreationTokens", "cacheReadTokens",
@@ -482,6 +493,13 @@ export async function syncLogs(): Promise<SyncResult> {
               ${m.inputTokens}, ${m.outputTokens}, ${m.cacheCreationTokens}, ${m.cacheReadTokens},
               ${m.costUSD}, ${new Date().toISOString()}
             )
+            ON CONFLICT("messageId", "requestId") DO UPDATE SET
+              "costUSD" = CASE WHEN excluded."costUSD" > 0
+                AND excluded."inputTokens" = "MessageUsage"."inputTokens"
+                AND excluded."outputTokens" = "MessageUsage"."outputTokens"
+                AND excluded."cacheCreationTokens" = "MessageUsage"."cacheCreationTokens"
+                AND excluded."cacheReadTokens" = "MessageUsage"."cacheReadTokens"
+                THEN excluded."costUSD" ELSE "MessageUsage"."costUSD" END
           `
         }
 

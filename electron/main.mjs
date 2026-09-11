@@ -1,4 +1,4 @@
-import { app, BrowserWindow, shell, dialog, utilityProcess } from 'electron'
+import { app, BrowserWindow, shell, dialog, utilityProcess, session } from 'electron'
 import { createServer } from 'net'
 import { existsSync, readFileSync } from 'fs'
 import { createRequire } from 'module'
@@ -21,6 +21,7 @@ const PRISMA_DIR = isPacked
 const USER_DATA = app.getPath('userData')
 const DB_PATH = path.join(USER_DATA, 'agentfit.db')
 const PREFERRED_PORT = 13749
+const LITELLM_PROBE_URL = 'https://raw.githubusercontent.com'
 
 let serverProcess = null
 let mainWindow = null
@@ -91,6 +92,27 @@ async function ensureDatabase() {
   }
 }
 
+// The server process fetches LiteLLM's price list over HTTPS. Node's fetch
+// ignores http_proxy/https_proxy unless NODE_USE_ENV_PROXY is set, and a
+// Finder-launched app has no proxy vars at all — so on a proxied machine the
+// fetch hung and every model released after the hardcoded fallback table was
+// last edited got costed at $0. Ask Chromium for the system proxy and hand it
+// to the server explicitly.
+async function resolveSystemProxyEnv() {
+  try {
+    const pac = await session.defaultSession.resolveProxy(LITELLM_PROBE_URL)
+    // resolveProxy returns e.g. "PROXY 127.0.0.1:7897" or "DIRECT".
+    const match = /PROXY\s+([^;]+)/i.exec(pac || '')
+    if (!match) return {}
+    const url = `http://${match[1].trim()}`
+    log(`Using system proxy ${url} for the server process`)
+    return { HTTP_PROXY: url, HTTPS_PROXY: url, NODE_USE_ENV_PROXY: '1' }
+  } catch (err) {
+    log(`Proxy detection skipped: ${err.message}`)
+    return {}
+  }
+}
+
 async function startServer() {
   const serverJs = path.join(SERVER_DIR, 'server.js')
 
@@ -107,12 +129,15 @@ async function startServer() {
 
   // Use utilityProcess.fork() instead of child_process.spawn() to avoid
   // a second dock icon on macOS. It runs as a background Node.js process.
+  const proxyEnv = await resolveSystemProxyEnv()
+
   serverProcess = utilityProcess.fork(serverJs, [], {
     cwd: SERVER_DIR,
     stdio: 'pipe',
     serviceName: 'agentfit-server',
     env: {
       ...process.env,
+      ...proxyEnv,
       PORT: String(activePort),
       HOSTNAME: '127.0.0.1',
       DATABASE_URL: `file:${DB_PATH}`,

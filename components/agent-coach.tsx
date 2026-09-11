@@ -94,8 +94,8 @@ const CRAFT_DIMENSIONS: {
     label: 'Throughput',
     color: 'var(--chart-6)',
     icon: Gauge,
-    description: 'How much output you get for your investment. Efficient sessions produce more output per dollar with fewer errors, and parallel sessions multiply your throughput.',
-    metrics: ['Cost efficiency (25%)', 'Output volume (25%)', 'Parallel sessions (25%)', 'Low error rate (25%)'],
+    description: 'How much AI work you ship and how deeply you engage. Total token volume signals real adoption — no one is an AI developer without burning tokens. Output, cost efficiency, parallel sessions, and low errors round it out. Token spend alone is gameable, which is why C penalizes inefficient curation.',
+    metrics: ['AI usage volume — total tokens (20%)', 'Output volume (20%)', 'Cost efficiency (20%)', 'Parallel sessions (20%)', 'Low error rate (20%)'],
   },
 ]
 

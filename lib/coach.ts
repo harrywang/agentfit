@@ -720,9 +720,16 @@ export function generateCoachInsights(data: UsageData): CoachSummary {
   const activeDaysScore = Math.min(daysCovered / 30, 1) * 30
   const flowScore = clamp(streakScore + consistencyScore + activeDaysScore)
 
-  // T — Throughput: cost efficiency + output volume + parallel sessions + low error rate
+  // T — Throughput: AI usage volume + output produced + cost efficiency + parallel sessions + low errors
+  //   Usage volume is an adoption signal (necessary, not sufficient) — C penalizes inefficient curation.
   const avgCostEfficiency = avgCost > 0 ? Math.min(30 / avgCost, 1) : 0 // $30/session = baseline
   const outputVolume = Math.min(overview.totalOutputTokens / 1_000_000, 1) // 1M output tokens = full marks
+  const totalTokensConsumed =
+    overview.totalInputTokens +
+    overview.totalOutputTokens +
+    overview.totalCacheCreationTokens +
+    overview.totalCacheReadTokens
+  const usageVolume = Math.min(totalTokensConsumed / 1_000_000_000, 1) // 1B total tokens = full marks
   const errorRate = overview.totalApiErrors / Math.max(sessions.length, 1)
   const lowErrorScore = Math.max(0, 1 - errorRate / 5) // 5 errors/session = 0
   // Parallel sessions: compute avg sessions per active day
@@ -737,7 +744,7 @@ export function generateCoachInsights(data: UsageData): CoachSummary {
     : 0
   const parallelScore = Math.min(avgParallel / 4, 1) // 4+ sessions/day = full marks
   const throughputScore = clamp(
-    (avgCostEfficiency * 25) + (outputVolume * 25) + (parallelScore * 25) + (lowErrorScore * 25)
+    (usageVolume * 20) + (outputVolume * 20) + (avgCostEfficiency * 20) + (parallelScore * 20) + (lowErrorScore * 20)
   )
 
   const craft: CraftScores = {
